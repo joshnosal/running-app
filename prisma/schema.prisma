@@ -1,0 +1,136 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id               String    @id
+  name             String
+  email            String    @unique
+  emailVerified    Boolean
+  image            String?
+  maxHeartRate     Int?      @default(185)
+  hrZoneMode       String    @default("formula")
+  hrZoneBoundaries Json?
+  units            String    @default("metric")
+  createdAt        DateTime
+  updatedAt        DateTime
+  sessions         Session[]
+  accounts         Account[]
+  activities       Activity[]
+
+  @@map("user")
+}
+
+model Session {
+  id        String   @id
+  expiresAt DateTime
+  token     String   @unique
+  createdAt DateTime
+  updatedAt DateTime
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime
+  updatedAt             DateTime
+
+  @@map("account")
+}
+
+model Verification {
+  id         String    @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime?
+  updatedAt  DateTime?
+
+  @@map("verification")
+}
+
+model Activity {
+  id                     String   @id @default(cuid())
+  userId                 String
+  user                   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fileName               String
+  fileHash               String   @unique
+  sport                  String   @default("running")
+  startTime              DateTime
+  endTime                DateTime
+  totalDistance          Float
+  totalMovingTime        Float
+  totalElapsedTime       Float
+  totalCalories          Int?
+  avgHeartRate           Int?
+  maxHeartRate           Int?
+  avgSpeed               Float
+  maxSpeed               Float
+  avgCadence             Int?
+  maxCadence             Int?
+  avgPower               Float?
+  maxPower               Float?
+  avgVerticalOscillation Float?
+  avgGroundContactTime   Float?
+  avgStrideLength        Float?
+  totalAscent            Float?
+  totalDescent           Float?
+  hrZoneTimes            Json?
+  efficiencyScore        Float?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+  laps                   Lap[]
+
+  @@map("activity")
+}
+
+model Lap {
+  id                     String   @id @default(cuid())
+  activityId             String
+  activity               Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  lapNumber              Int
+  startTime              DateTime
+  endTime                DateTime
+  totalDistance          Float
+  totalMovingTime        Float
+  avgHeartRate           Int?
+  maxHeartRate           Int?
+  avgSpeed               Float
+  maxSpeed               Float
+  avgCadence             Int?
+  avgPower               Float?
+  maxPower               Float?
+  avgVerticalOscillation Float?
+  avgGroundContactTime   Float?
+  avgStrideLength        Float?
+  totalAscent            Float?
+  totalDescent           Float?
+  startLat               Float?
+  startLng               Float?
+  endLat                 Float?
+  endLng                 Float?
+  hrZoneTimes            Json?
+  efficiencyScore        Float?
+
+  @@map("lap")
+}
