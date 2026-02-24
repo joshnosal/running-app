@@ -17,16 +17,17 @@ interface MetricSparklineProps {
   data: SparklinePoint[];
   baseline: number | null;
   label: string;
-  formatValue?: (v: number) => string;
+  unit?: string;
 }
 
 export default function MetricSparkline({
   data,
   baseline,
   label,
-  formatValue,
+  unit,
 }: MetricSparklineProps) {
-  const fmt = formatValue ?? ((v: number) => v.toFixed(2));
+  const fmt = (v: number) =>
+    unit ? `${v.toFixed(2)} ${unit}` : v.toFixed(2);
 
   return (
     <ResponsiveContainer width="100%" height={80}>

@@ -1,7 +1,10 @@
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import { auth } from "@/lib/auth";
+import { db } from "@/lib/db";
 import AppShell from "./AppShell";
+import type { UserPreferences } from "@/types/preferences";
+import { DEFAULT_PREFERENCES } from "@/types/preferences";
 
 export default async function AppLayout({
   children,
@@ -13,5 +16,27 @@ export default async function AppLayout({
     redirect("/sign-in");
   }
 
-  return <AppShell>{children}</AppShell>;
+  const user = await db.user.findUnique({
+    where: { id: session.user.id },
+    select: {
+      units: true,
+      theme: true,
+      maxHeartRate: true,
+      hrZoneMode: true,
+      hrZoneBoundaries: true,
+    },
+  });
+
+  const preferences: UserPreferences = {
+    units: (user?.units as UserPreferences["units"]) ?? DEFAULT_PREFERENCES.units,
+    theme: (user?.theme as UserPreferences["theme"]) ?? DEFAULT_PREFERENCES.theme,
+    maxHeartRate: user?.maxHeartRate ?? DEFAULT_PREFERENCES.maxHeartRate,
+    hrZoneMode:
+      (user?.hrZoneMode as UserPreferences["hrZoneMode"]) ?? DEFAULT_PREFERENCES.hrZoneMode,
+    hrZoneBoundaries: Array.isArray(user?.hrZoneBoundaries)
+      ? (user.hrZoneBoundaries as number[])
+      : null,
+  };
+
+  return <AppShell initialPreferences={preferences}>{children}</AppShell>;
 }

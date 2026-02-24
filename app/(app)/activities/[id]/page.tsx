@@ -15,6 +15,7 @@ import TableRow from "@mui/material/TableRow";
 import TableCell from "@mui/material/TableCell";
 import Alert from "@mui/material/Alert";
 import HRZoneChart from "@/components/charts/HRZoneChart";
+import DeleteActivityButton from "@/components/activities/DeleteActivityButton";
 import {
   formatDistance,
   formatPace,
@@ -103,12 +104,15 @@ export default async function ActivityDetailPage({
 
   return (
     <Box>
-      <Typography variant="h4" gutterBottom>
-        {date}
-      </Typography>
-      <Typography variant="body2" color="text.secondary" gutterBottom>
-        {activity.sport} &bull; {activity.fileName}
-      </Typography>
+      <Box sx={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", mb: 2 }}>
+        <Box>
+          <Typography variant="h4">{date}</Typography>
+          <Typography variant="body2" color="text.secondary">
+            {activity.sport} &bull; {activity.fileName}
+          </Typography>
+        </Box>
+        <DeleteActivityButton activityId={activity.id} />
+      </Box>
 
       {!activity.avgPower && (
         <Alert severity="info" sx={{ mb: 2 }}>

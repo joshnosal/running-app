@@ -10,15 +10,15 @@ export async function PATCH(request: NextRequest) {
   }
 
   const body = await request.json();
-  const { name, units, maxHeartRate, hrZoneMode, hrZoneBoundaries } = body;
+  const { name, units, maxHeartRate, hrZoneMode, hrZoneBoundaries, theme } = body;
 
   const updateData: Record<string, unknown> = {};
   if (name !== undefined) updateData.name = name;
   if (units !== undefined) updateData.units = units;
   if (maxHeartRate !== undefined) updateData.maxHeartRate = maxHeartRate;
   if (hrZoneMode !== undefined) updateData.hrZoneMode = hrZoneMode;
-  if (hrZoneBoundaries !== undefined)
-    updateData.hrZoneBoundaries = hrZoneBoundaries;
+  if (hrZoneBoundaries !== undefined) updateData.hrZoneBoundaries = hrZoneBoundaries;
+  if (theme !== undefined) updateData.theme = theme;
 
   const updated = await db.user.update({
     where: { id: session.user.id },
@@ -28,6 +28,7 @@ export async function PATCH(request: NextRequest) {
       name: true,
       email: true,
       units: true,
+      theme: true,
       maxHeartRate: true,
       hrZoneMode: true,
       hrZoneBoundaries: true,

@@ -16,6 +16,7 @@ model User {
   hrZoneMode       String    @default("formula")
   hrZoneBoundaries Json?
   units            String    @default("metric")
+  theme            String    @default("system")
   createdAt        DateTime
   updatedAt        DateTime
   sessions         Session[]

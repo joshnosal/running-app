@@ -12,39 +12,46 @@ import FormControl from "@mui/material/FormControl";
 import FormLabel from "@mui/material/FormLabel";
 import Button from "@mui/material/Button";
 import Alert from "@mui/material/Alert";
-import Divider from "@mui/material/Divider";
 import { useSession } from "@/lib/auth-client";
 import { getZoneBoundaries, getZoneLabels } from "@/lib/hr-zones";
+import { useUserPreferences } from "@/lib/user-preferences-context";
 
 type HRZoneMode = "formula" | "custom";
 type UnitsMode = "metric" | "imperial";
+type ThemeMode = "light" | "dark" | "system";
 
 interface UserExtra {
   maxHeartRate?: number | null;
   hrZoneMode?: string | null;
   hrZoneBoundaries?: unknown;
   units?: string | null;
+  theme?: string | null;
 }
 
 export default function SettingsPage() {
   const { data: session } = useSession();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const user = session?.user as any as (Record<string, unknown> & UserExtra) | undefined;
+  const { updatePreferences } = useUserPreferences();
 
   const [name, setName] = useState("");
   const [units, setUnits] = useState<UnitsMode>("metric");
+  const [theme, setTheme] = useState<ThemeMode>("system");
   const [hrZoneMode, setHRZoneMode] = useState<HRZoneMode>("formula");
   const [maxHR, setMaxHR] = useState(185);
   const [customBounds, setCustomBounds] = useState<[number, number, number, number]>([
     111, 129, 148, 166,
   ]);
   const [saving, setSaving] = useState(false);
-  const [result, setResult] = useState<{ type: "success" | "error"; message: string } | null>(null);
+  const [result, setResult] = useState<{ type: "success" | "error"; message: string } | null>(
+    null
+  );
 
   useEffect(() => {
     if (!user) return;
     setName(String(user.name ?? ""));
     setUnits((user.units as UnitsMode) ?? "metric");
+    setTheme((user.theme as ThemeMode) ?? "system");
     setHRZoneMode((user.hrZoneMode as HRZoneMode) ?? "formula");
     setMaxHR(user.maxHeartRate ?? 185);
     if (Array.isArray(user.hrZoneBoundaries)) {
@@ -55,7 +62,7 @@ export default function SettingsPage() {
 
   const boundaries = getZoneBoundaries({
     maxHeartRate: maxHR,
-    hrZoneMode: hrZoneMode,
+    hrZoneMode,
     hrZoneBoundaries: hrZoneMode === "custom" ? customBounds : null,
   });
   const zoneLabels = getZoneLabels(boundaries);
@@ -68,14 +75,11 @@ export default function SettingsPage() {
     const body: Record<string, unknown> = {
       name,
       units,
+      theme,
       hrZoneMode,
       maxHeartRate: maxHR,
+      hrZoneBoundaries: hrZoneMode === "custom" ? customBounds : null,
     };
-    if (hrZoneMode === "custom") {
-      body.hrZoneBoundaries = customBounds;
-    } else {
-      body.hrZoneBoundaries = null;
-    }
 
     try {
       const res = await fetch("/api/settings", {
@@ -85,6 +89,13 @@ export default function SettingsPage() {
       });
       if (res.ok) {
         setResult({ type: "success", message: "Settings saved." });
+        updatePreferences({
+          units,
+          theme,
+          maxHeartRate: maxHR,
+          hrZoneMode,
+          hrZoneBoundaries: hrZoneMode === "custom" ? Array.from(customBounds) : null,
+        });
       } else {
         const data = await res.json();
         setResult({ type: "error", message: data.error ?? "Save failed." });
@@ -128,6 +139,24 @@ export default function SettingsPage() {
 
         <Paper sx={{ p: 3, mb: 3 }}>
           <Typography variant="h6" gutterBottom>
+            Appearance
+          </Typography>
+          <FormControl>
+            <FormLabel>Theme</FormLabel>
+            <RadioGroup
+              value={theme}
+              onChange={(e) => setTheme(e.target.value as ThemeMode)}
+              row
+            >
+              <FormControlLabel value="light" control={<Radio />} label="Light" />
+              <FormControlLabel value="dark" control={<Radio />} label="Dark" />
+              <FormControlLabel value="system" control={<Radio />} label="System default" />
+            </RadioGroup>
+          </FormControl>
+        </Paper>
+
+        <Paper sx={{ p: 3, mb: 3 }}>
+          <Typography variant="h6" gutterBottom>
             Units
           </Typography>
           <FormControl>
@@ -153,16 +182,8 @@ export default function SettingsPage() {
               onChange={(e) => setHRZoneMode(e.target.value as HRZoneMode)}
               row
             >
-              <FormControlLabel
-                value="formula"
-                control={<Radio />}
-                label="Max HR formula"
-              />
-              <FormControlLabel
-                value="custom"
-                control={<Radio />}
-                label="Custom zones"
-              />
+              <FormControlLabel value="formula" control={<Radio />} label="Max HR formula" />
+              <FormControlLabel value="custom" control={<Radio />} label="Custom zones" />
             </RadioGroup>
           </FormControl>
 
@@ -173,7 +194,7 @@ export default function SettingsPage() {
                 type="number"
                 value={maxHR}
                 onChange={(e) => setMaxHR(parseInt(e.target.value) || 185)}
-                inputProps={{ min: 100, max: 220 }}
+                slotProps={{ htmlInput: { min: 100, max: 220 } }}
                 sx={{ width: 180, mb: 2 }}
               />
               <Typography variant="body2" color="text.secondary">
@@ -206,7 +227,7 @@ export default function SettingsPage() {
                       return next;
                     });
                   }}
-                  inputProps={{ min: 50, max: 220 }}
+                  slotProps={{ htmlInput: { min: 50, max: 220 } }}
                   sx={{ width: 220, mb: 1, display: "block" }}
                   error={z > 1 && customBounds[z - 1] <= customBounds[z - 2]}
                   helperText={

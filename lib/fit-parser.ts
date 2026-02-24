@@ -1,38 +1,22 @@
 import FitParser from "fit-file-parser";
+
+// Derive types from the library's parseAsync return type rather than reaching into internals
+type ParsedFit = Awaited<ReturnType<FitParser["parseAsync"]>>;
+type ParsedSession = NonNullable<NonNullable<ParsedFit["activity"]>["sessions"]>[number];
+type ParsedLap = NonNullable<ParsedFit["laps"]>[number];
+
 import { createHash } from "crypto";
 import { Prisma } from "@prisma/client";
-import type { FitData, FitSession, FitLap } from "@/types/fit";
 import { getZoneBoundaries, getZoneForHR, type ZoneBoundaries } from "@/lib/hr-zones";
 import { db } from "@/lib/db";
 
-const SEMICIRCLE_TO_DEG = 180 / Math.pow(2, 31);
-
-function semiToDeg(semi: number | undefined): number | null {
-  if (semi == null) return null;
-  return semi * SEMICIRCLE_TO_DEG;
-}
-
-function parseFitBuffer(buffer: Buffer<ArrayBuffer>): Promise<FitData> {
-  return new Promise((resolve, reject) => {
-    const parser = new FitParser({
-      force: true,
-      speedUnit: "m/s",
-      lengthUnit: "m",
-      temperatureUnit: "celsius",
-      elapsedRecordField: true,
-      mode: "cascade",
-    });
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    parser.parse(buffer.buffer as ArrayBuffer, (error: any, data: any) => {
-      if (error) reject(new Error(String(error)));
-      else resolve(data as FitData);
-    });
-  });
-}
+export type ParseFitResult =
+  | { status: "created"; activityId: string; startTime: Date; sport: string }
+  | { status: "duplicate"; activityId: string; startTime: Date; sport: string }
+  | { status: "skipped"; reason: string };
 
 function computeZoneTimesFromLaps(
-  laps: FitLap[],
+  laps: ParsedLap[],
   boundaries: ZoneBoundaries
 ): [number, number, number, number, number] {
   const times: [number, number, number, number, number] = [0, 0, 0, 0, 0];
@@ -58,23 +42,50 @@ export async function parseFitFile(
   fileBuffer: Buffer<ArrayBuffer>,
   fileName: string,
   user: UserForParsing
-): Promise<{ activityId: string; isDuplicate: boolean }> {
+): Promise<ParseFitResult> {
   const fileHash = createHash("sha256").update(fileBuffer).digest("hex");
 
-  // Check for duplicate
-  const existing = await db.activity.findUnique({ where: { fileHash } });
+  const existing = await db.activity.findUnique({
+    where: { fileHash },
+    select: { id: true, startTime: true, sport: true },
+  });
   if (existing) {
-    return { activityId: existing.id, isDuplicate: true };
+    return {
+      status: "duplicate",
+      activityId: existing.id,
+      startTime: existing.startTime,
+      sport: existing.sport,
+    };
   }
 
-  const fitData = await parseFitBuffer(fileBuffer);
+  const parser = new FitParser({
+    force: true,
+    speedUnit: "m/s",
+    lengthUnit: "m",
+    temperatureUnit: "celsius",
+    elapsedRecordField: true,
+    mode: "cascade",
+  });
 
-  const session: FitSession = fitData.sessions?.[0] ?? {};
-  const laps: FitLap[] = fitData.laps ?? [];
+  const fitData = await parser.parseAsync(fileBuffer);
+
+  // In cascade mode, sessions are nested under activity
+  const session: ParsedSession = fitData.activity?.sessions?.[0] ?? ({} as ParsedSession);
+  // Laps may appear at top level or nested under the session
+  const laps: ParsedLap[] = fitData.laps ?? fitData.activity?.sessions?.[0]?.laps ?? [];
+
+  // Reject non-running activities
+  const sport = session.sport ?? "running";
+  if (sport !== "running") {
+    return {
+      status: "skipped",
+      reason: `Not a running activity (${sport})`,
+    };
+  }
 
   const boundaries = getZoneBoundaries(user);
 
-  // HR zone times — use from session message if present, else compute from laps
+  // HR zone times — use from session message if present, else approximate from lap averages
   let hrZoneTimes: number[] | null = null;
   if (session.time_in_hr_zone && session.time_in_hr_zone.length >= 5) {
     hrZoneTimes = session.time_in_hr_zone.slice(0, 5);
@@ -82,12 +93,11 @@ export async function parseFitFile(
     hrZoneTimes = computeZoneTimesFromLaps(laps, boundaries);
   }
 
-  const avgSpeed = session.avg_speed ?? 0;
+  const avgSpeed = session.enhanced_avg_speed ?? session.avg_speed ?? 0;
   const avgPower = session.avg_power ?? null;
-  const efficiencyScore =
-    avgPower && avgPower > 0 ? avgSpeed / avgPower : null;
+  const efficiencyScore = avgPower && avgPower > 0 ? avgSpeed / avgPower : null;
 
-  const startTime = session.start_time ?? new Date();
+  const startTime = session.start_time ? new Date(session.start_time) : new Date();
   const elapsedTime = session.total_elapsed_time ?? session.total_timer_time ?? 0;
   const endTime = new Date(startTime.getTime() + elapsedTime * 1000);
 
@@ -96,7 +106,7 @@ export async function parseFitFile(
       userId: user.id,
       fileName,
       fileHash,
-      sport: session.sport ?? "running",
+      sport,
       startTime,
       endTime,
       totalDistance: session.total_distance ?? 0,
@@ -106,14 +116,14 @@ export async function parseFitFile(
       avgHeartRate: session.avg_heart_rate ?? null,
       maxHeartRate: session.max_heart_rate ?? null,
       avgSpeed,
-      maxSpeed: session.max_speed ?? 0,
+      maxSpeed: session.enhanced_max_speed ?? session.max_speed ?? 0,
       avgCadence: session.avg_cadence ?? null,
       maxCadence: session.max_cadence ?? null,
       avgPower,
       maxPower: session.max_power ?? null,
       avgVerticalOscillation: session.avg_vertical_oscillation ?? null,
-      avgGroundContactTime: session.avg_ground_contact_time ?? null,
-      avgStrideLength: session.avg_stride_length ?? null,
+      avgGroundContactTime: session.avg_stance_time ?? null,
+      avgStrideLength: session.avg_step_length ?? null,
       totalAscent: session.total_ascent ?? null,
       totalDescent: session.total_descent ?? null,
       hrZoneTimes: hrZoneTimes ?? Prisma.JsonNull,
@@ -121,22 +131,21 @@ export async function parseFitFile(
     },
   });
 
-  // Create laps
   if (laps.length > 0) {
     const lapData = laps.map((lap, index) => {
-      const lapStart = lap.start_time ?? startTime;
+      const lapStart = lap.start_time ? new Date(lap.start_time) : startTime;
       const lapElapsed = lap.total_elapsed_time ?? lap.total_timer_time ?? 0;
       const lapEnd = new Date(lapStart.getTime() + lapElapsed * 1000);
 
-      const lapAvgSpeed = lap.avg_speed ?? 0;
+      const lapAvgSpeed = lap.enhanced_avg_speed ?? lap.avg_speed ?? 0;
       const lapAvgPower = lap.avg_power ?? null;
       const lapEfficiency =
         lapAvgPower && lapAvgPower > 0 ? lapAvgSpeed / lapAvgPower : null;
 
-      let lapHrZoneTimes: number[] | null = null;
-      if (lap.time_in_hr_zone && lap.time_in_hr_zone.length >= 5) {
-        lapHrZoneTimes = lap.time_in_hr_zone.slice(0, 5);
-      }
+      const lapHrZoneTimes =
+        lap.time_in_hr_zone && lap.time_in_hr_zone.length >= 5
+          ? lap.time_in_hr_zone.slice(0, 5)
+          : null;
 
       return {
         activityId: activity.id,
@@ -148,19 +157,19 @@ export async function parseFitFile(
         avgHeartRate: lap.avg_heart_rate ?? null,
         maxHeartRate: lap.max_heart_rate ?? null,
         avgSpeed: lapAvgSpeed,
-        maxSpeed: lap.max_speed ?? 0,
+        maxSpeed: lap.enhanced_max_speed ?? lap.max_speed ?? 0,
         avgCadence: lap.avg_cadence ?? null,
         avgPower: lapAvgPower,
         maxPower: lap.max_power ?? null,
         avgVerticalOscillation: lap.avg_vertical_oscillation ?? null,
-        avgGroundContactTime: lap.avg_ground_contact_time ?? null,
-        avgStrideLength: lap.avg_stride_length ?? null,
+        avgGroundContactTime: lap.avg_stance_time ?? null,
+        avgStrideLength: lap.avg_step_length ?? null,
         totalAscent: lap.total_ascent ?? null,
         totalDescent: lap.total_descent ?? null,
-        startLat: semiToDeg(lap.start_position_lat ?? undefined),
-        startLng: semiToDeg(lap.start_position_long ?? undefined),
-        endLat: semiToDeg(lap.end_position_lat ?? undefined),
-        endLng: semiToDeg(lap.end_position_long ?? undefined),
+        startLat: lap.start_position_lat ?? null,
+        startLng: lap.start_position_long ?? null,
+        endLat: lap.end_position_lat ?? null,
+        endLng: lap.end_position_long ?? null,
         hrZoneTimes: lapHrZoneTimes ?? Prisma.JsonNull,
         efficiencyScore: lapEfficiency,
       };
@@ -169,5 +178,5 @@ export async function parseFitFile(
     await db.lap.createMany({ data: lapData });
   }
 
-  return { activityId: activity.id, isDuplicate: false };
+  return { status: "created", activityId: activity.id, startTime, sport };
 }

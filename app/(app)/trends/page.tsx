@@ -94,52 +94,61 @@ export default async function TrendsPage({
       isRecent: recentIds.has(r.id),
     }));
 
+  // format is used only in the server-rendered table (never passed to client components)
   const metrics = [
     {
       key: "totalDistance" as const,
       label: "Distance",
+      unit: units === "imperial" ? "mi" : "km",
       format: (v: number) => formatDistance(v, units),
       baselineVal: baseline?.totalDistance ?? null,
     },
     {
       key: "avgSpeed" as const,
       label: "Avg Pace",
+      unit: units === "imperial" ? "/mi" : "/km",
       format: (v: number) => formatPace(v, units),
       baselineVal: baseline?.avgSpeed ?? null,
     },
     {
       key: "avgHeartRate" as const,
       label: "Avg HR",
+      unit: "bpm",
       format: (v: number) => `${Math.round(v)} bpm`,
       baselineVal: baseline?.avgHeartRate ?? null,
     },
     {
       key: "avgCadence" as const,
       label: "Cadence",
+      unit: "spm",
       format: (v: number) => `${Math.round(v)} spm`,
       baselineVal: baseline?.avgCadence ?? null,
     },
     {
       key: "avgPower" as const,
       label: "Avg Power",
+      unit: "W",
       format: (v: number) => `${Math.round(v)} W`,
       baselineVal: baseline?.avgPower ?? null,
     },
     {
       key: "efficiencyScore" as const,
       label: "Efficiency",
+      unit: "m/s/W",
       format: (v: number) => v.toFixed(4),
       baselineVal: baseline?.efficiencyScore ?? null,
     },
     {
       key: "avgVerticalOscillation" as const,
       label: "Vertical Osc.",
+      unit: "mm",
       format: (v: number) => `${v.toFixed(1)} mm`,
       baselineVal: baseline?.avgVerticalOscillation ?? null,
     },
     {
       key: "avgGroundContactTime" as const,
       label: "Ground Contact",
+      unit: "ms",
       format: (v: number) => `${Math.round(v)} ms`,
       baselineVal: baseline?.avgGroundContactTime ?? null,
     },
@@ -244,7 +253,7 @@ export default async function TrendsPage({
                     data={sparklineData(m.key)}
                     baseline={m.baselineVal}
                     label={m.label}
-                    formatValue={m.format}
+                    unit={m.unit}
                   />
                 </Paper>
               </Grid>

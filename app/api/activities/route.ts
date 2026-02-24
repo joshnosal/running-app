@@ -16,6 +16,8 @@ export async function GET(request: NextRequest) {
   const sortOrder = searchParams.get("order") ?? "desc";
   const from = searchParams.get("from");
   const to = searchParams.get("to");
+  const distMin = searchParams.get("distMin");
+  const distMax = searchParams.get("distMax");
 
   const where = {
     userId: session.user.id,
@@ -24,6 +26,14 @@ export async function GET(request: NextRequest) {
           startTime: {
             ...(from ? { gte: new Date(from) } : {}),
             ...(to ? { lte: new Date(to) } : {}),
+          },
+        }
+      : {}),
+    ...(distMin || distMax
+      ? {
+          totalDistance: {
+            ...(distMin ? { gte: parseFloat(distMin) } : {}),
+            ...(distMax ? { lte: parseFloat(distMax) } : {}),
           },
         }
       : {}),
@@ -69,4 +79,24 @@ export async function GET(request: NextRequest) {
   ]);
 
   return NextResponse.json({ activities, total, page, limit });
+}
+
+export async function DELETE(request: NextRequest) {
+  const session = await auth.api.getSession({ headers: await headers() });
+  if (!session) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const body = await request.json();
+  const ids: string[] = Array.isArray(body.ids) ? body.ids : [];
+
+  if (ids.length === 0) {
+    return NextResponse.json({ error: "No IDs provided" }, { status: 400 });
+  }
+
+  const { count } = await db.activity.deleteMany({
+    where: { id: { in: ids }, userId: session.user.id },
+  });
+
+  return NextResponse.json({ deleted: count });
 }

@@ -31,6 +31,11 @@ export const auth = betterAuth({
         defaultValue: "metric",
         fieldName: "units",
       },
+      theme: {
+        type: "string",
+        defaultValue: "system",
+        fieldName: "theme",
+      },
     },
   },
 });
