@@ -24,6 +24,8 @@ export default async function AppLayout({
       maxHeartRate: true,
       hrZoneMode: true,
       hrZoneBoundaries: true,
+      paceZoneBoundaries: true,
+      cadenceZoneBoundaries: true,
     },
   });
 
@@ -36,6 +38,12 @@ export default async function AppLayout({
     hrZoneBoundaries: Array.isArray(user?.hrZoneBoundaries)
       ? (user.hrZoneBoundaries as number[])
       : null,
+    paceZoneBoundaries: Array.isArray(user?.paceZoneBoundaries) && user.paceZoneBoundaries.length === 2
+      ? (user.paceZoneBoundaries as [number, number])
+      : DEFAULT_PREFERENCES.paceZoneBoundaries,
+    cadenceZoneBoundaries: Array.isArray(user?.cadenceZoneBoundaries) && user.cadenceZoneBoundaries.length === 2
+      ? (user.cadenceZoneBoundaries as [number, number])
+      : DEFAULT_PREFERENCES.cadenceZoneBoundaries,
   };
 
   return <AppShell initialPreferences={preferences}>{children}</AppShell>;

@@ -14,7 +14,9 @@ model User {
   image            String?
   maxHeartRate     Int?      @default(185)
   hrZoneMode       String    @default("formula")
-  hrZoneBoundaries Json?
+  hrZoneBoundaries      Json?
+  paceZoneBoundaries    Json?
+  cadenceZoneBoundaries Json?
   units            String    @default("metric")
   theme            String    @default("system")
   createdAt        DateTime

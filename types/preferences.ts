@@ -8,6 +8,8 @@ export interface UserPreferences {
   maxHeartRate: number;
   hrZoneMode: HRZoneMode;
   hrZoneBoundaries: number[] | null;
+  paceZoneBoundaries: [number, number] | null;
+  cadenceZoneBoundaries: [number, number] | null;
 }
 
 export const DEFAULT_PREFERENCES: UserPreferences = {
@@ -16,4 +18,6 @@ export const DEFAULT_PREFERENCES: UserPreferences = {
   maxHeartRate: 185,
   hrZoneMode: "formula",
   hrZoneBoundaries: null,
+  paceZoneBoundaries: [3.35, 4.47],
+  cadenceZoneBoundaries: [160, 170],
 };

@@ -15,6 +15,7 @@ import Alert from "@mui/material/Alert";
 import { useSession } from "@/lib/auth-client";
 import { getZoneBoundaries, getZoneLabels } from "@/lib/hr-zones";
 import { useUserPreferences } from "@/lib/user-preferences-context";
+import { formatPace, parsePace } from "@/lib/units";
 
 type HRZoneMode = "formula" | "custom";
 type UnitsMode = "metric" | "imperial";
@@ -24,6 +25,8 @@ interface UserExtra {
   maxHeartRate?: number | null;
   hrZoneMode?: string | null;
   hrZoneBoundaries?: unknown;
+  paceZoneBoundaries?: unknown;
+  cadenceZoneBoundaries?: unknown;
   units?: string | null;
   theme?: string | null;
 }
@@ -42,6 +45,10 @@ export default function SettingsPage() {
   const [customBounds, setCustomBounds] = useState<[number, number, number, number]>([
     111, 129, 148, 166,
   ]);
+  const [paceBound0, setPaceBound0] = useState("7:28"); // ~3.35 m/s in min/km
+  const [paceBound1, setPaceBound1] = useState("5:37"); // ~4.47 m/s in min/km
+  const [cadBound0, setCadBound0] = useState(160);
+  const [cadBound1, setCadBound1] = useState(170);
   const [saving, setSaving] = useState(false);
   const [result, setResult] = useState<{ type: "success" | "error"; message: string } | null>(
     null
@@ -58,6 +65,19 @@ export default function SettingsPage() {
       const b = user.hrZoneBoundaries as number[];
       if (b.length === 4) setCustomBounds([b[0], b[1], b[2], b[3]]);
     }
+    const currentUnits = (user.units as UnitsMode) ?? "metric";
+    if (Array.isArray(user.paceZoneBoundaries) && user.paceZoneBoundaries.length === 2) {
+      const p = user.paceZoneBoundaries as number[];
+      const raw0 = formatPace(p[0], currentUnits).replace(/ \/.*$/, "");
+      const raw1 = formatPace(p[1], currentUnits).replace(/ \/.*$/, "");
+      setPaceBound0(raw0);
+      setPaceBound1(raw1);
+    }
+    if (Array.isArray(user.cadenceZoneBoundaries) && user.cadenceZoneBoundaries.length === 2) {
+      const c = user.cadenceZoneBoundaries as number[];
+      setCadBound0(c[0]);
+      setCadBound1(c[1]);
+    }
   }, [user]);
 
   const boundaries = getZoneBoundaries({
@@ -72,6 +92,8 @@ export default function SettingsPage() {
     setSaving(true);
     setResult(null);
 
+    const paceVal0 = parsePace(paceBound0, units);
+    const paceVal1 = parsePace(paceBound1, units);
     const body: Record<string, unknown> = {
       name,
       units,
@@ -79,6 +101,8 @@ export default function SettingsPage() {
       hrZoneMode,
       maxHeartRate: maxHR,
       hrZoneBoundaries: hrZoneMode === "custom" ? customBounds : null,
+      paceZoneBoundaries: paceVal0 > 0 && paceVal1 > 0 ? [paceVal0, paceVal1] : null,
+      cadenceZoneBoundaries: [cadBound0, cadBound1],
     };
 
     try {
@@ -95,6 +119,8 @@ export default function SettingsPage() {
           maxHeartRate: maxHR,
           hrZoneMode,
           hrZoneBoundaries: hrZoneMode === "custom" ? Array.from(customBounds) : null,
+          paceZoneBoundaries: paceVal0 > 0 && paceVal1 > 0 ? [paceVal0, paceVal1] : null,
+          cadenceZoneBoundaries: [cadBound0, cadBound1],
         });
       } else {
         const data = await res.json();
@@ -239,6 +265,56 @@ export default function SettingsPage() {
               ))}
             </Box>
           )}
+        </Paper>
+
+        <Paper sx={{ p: 3, mb: 3 }}>
+          <Typography variant="h6" gutterBottom>
+            Training Zones
+          </Typography>
+
+          <Typography variant="subtitle2" sx={{ mt: 1, mb: 1 }}>
+            Pace Zones (3 zones: Easy / Tempo / Threshold)
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+            Enter boundaries in {units === "imperial" ? "min/mile" : "min/km"} format (e.g. "8:00")
+          </Typography>
+          <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap", mb: 2 }}>
+            <TextField
+              label={`Easy → Tempo boundary (${units === "imperial" ? "/mi" : "/km"})`}
+              value={paceBound0}
+              onChange={(e) => setPaceBound0(e.target.value)}
+              sx={{ width: 260 }}
+              placeholder="7:28"
+              helperText="Slower pace = Easy zone"
+            />
+            <TextField
+              label={`Tempo → Threshold boundary (${units === "imperial" ? "/mi" : "/km"})`}
+              value={paceBound1}
+              onChange={(e) => setPaceBound1(e.target.value)}
+              sx={{ width: 260 }}
+              placeholder="5:37"
+            />
+          </Box>
+
+          <Typography variant="subtitle2" sx={{ mt: 1, mb: 1 }}>
+            Cadence Zones (3 zones: Low / Mid / High)
+          </Typography>
+          <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap" }}>
+            <TextField
+              label="Low → Mid boundary (spm)"
+              type="number"
+              value={cadBound0}
+              onChange={(e) => setCadBound0(parseInt(e.target.value) || 0)}
+              sx={{ width: 220 }}
+            />
+            <TextField
+              label="Mid → High boundary (spm)"
+              type="number"
+              value={cadBound1}
+              onChange={(e) => setCadBound1(parseInt(e.target.value) || 0)}
+              sx={{ width: 220 }}
+            />
+          </Box>
         </Paper>
 
         {result && (

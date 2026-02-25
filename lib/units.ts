@@ -53,6 +53,16 @@ export function formatDuration(seconds: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
+export function parsePace(str: string, units: Units): number {
+  const parts = str.split(":");
+  if (parts.length !== 2) return 0;
+  const minutes = parseInt(parts[0], 10) || 0;
+  const seconds = parseInt(parts[1], 10) || 0;
+  const totalSecs = minutes * 60 + seconds;
+  if (totalSecs <= 0) return 0;
+  return units === "imperial" ? 1609.34 / totalSecs : 1000 / totalSecs;
+}
+
 export function metersToDisplayDistance(m: number, units: Units): number {
   return units === "imperial" ? m * M_TO_MI : m * M_TO_KM;
 }

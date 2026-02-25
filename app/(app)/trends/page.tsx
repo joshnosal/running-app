@@ -1,264 +1,200 @@
-import { headers } from "next/headers";
-import { auth } from "@/lib/auth";
-import { db } from "@/lib/db";
+"use client";
+
+import { useState, useEffect } from "react";
 import Typography from "@mui/material/Typography";
 import Box from "@mui/material/Box";
-import Grid from "@mui/material/Grid";
 import Paper from "@mui/material/Paper";
-import Card from "@mui/material/Card";
-import CardContent from "@mui/material/CardContent";
-import Chip from "@mui/material/Chip";
-import TrendingUpIcon from "@mui/icons-material/TrendingUp";
-import TrendingDownIcon from "@mui/icons-material/TrendingDown";
-import RemoveIcon from "@mui/icons-material/Remove";
-import MetricSparkline from "@/components/charts/MetricSparkline";
-import { formatDistance, formatPace, formatDuration, type Units } from "@/lib/units";
+import ToggleButton from "@mui/material/ToggleButton";
+import ToggleButtonGroup from "@mui/material/ToggleButtonGroup";
+import Select from "@mui/material/Select";
+import MenuItem from "@mui/material/MenuItem";
+import FormControl from "@mui/material/FormControl";
+import InputLabel from "@mui/material/InputLabel";
+import Tooltip from "@mui/material/Tooltip";
+import EfficiencyBandChart from "@/components/charts/EfficiencyBandChart";
+import SpeedPowerScatter from "@/components/charts/SpeedPowerScatter";
+import ZoneEfficiencyChart from "@/components/charts/ZoneEfficiencyChart";
+import D3PaceZoneChart from "@/components/charts/D3PaceZoneChart";
+import { useUserPreferences } from "@/lib/user-preferences-context";
 
-type Period = "1m" | "3m" | "6m" | "1y";
-
-function periodToDate(period: Period): Date {
-  const now = new Date();
-  switch (period) {
-    case "3m": return new Date(now.setMonth(now.getMonth() - 3));
-    case "6m": return new Date(now.setMonth(now.getMonth() - 6));
-    case "1y": return new Date(now.setFullYear(now.getFullYear() - 1));
-    default: return new Date(now.setMonth(now.getMonth() - 1));
-  }
+interface AnalyticsRecord {
+  id: string;
+  activityId?: string;
+  lapNumber?: number;
+  startTime: string;
+  avgSpeed: number;
+  avgPower: number | null;
+  avgCadence: number | null;
+  avgHeartRate: number | null;
+  efficiencyScore: number | null;
 }
 
-function avg(arr: (number | null | undefined)[]): number | null {
-  const valid = arr.filter((v): v is number => v != null);
-  return valid.length ? valid.reduce((a, b) => a + b, 0) / valid.length : null;
-}
+type DataType = "activities" | "laps";
 
-function DeltaIndicator({ current, baseline }: { current: number | null; baseline: number | null }) {
-  if (current == null || baseline == null) return <RemoveIcon fontSize="small" color="disabled" />;
-  const pct = ((current - baseline) / baseline) * 100;
-  if (Math.abs(pct) < 2) return <RemoveIcon fontSize="small" color="disabled" />;
-  if (pct > 0) return <TrendingUpIcon fontSize="small" color="success" />;
-  return <TrendingDownIcon fontSize="small" color="error" />;
-}
+export default function TrendsPage() {
+  const { preferences } = useUserPreferences();
+  const { units, paceZoneBoundaries, cadenceZoneBoundaries } = preferences;
 
-export default async function TrendsPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ period?: string }>;
-}) {
-  const session = await auth.api.getSession({ headers: await headers() });
-  if (!session) return null;
+  const [n, setN] = useState(50);
+  const [dataType, setDataType] = useState<DataType>("activities");
+  const [mainData, setMainData] = useState<AnalyticsRecord[]>([]);
+  const [lapsData, setLapsData] = useState<AnalyticsRecord[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const user = session.user as typeof session.user & { units?: string };
-  const units = (user.units ?? "metric") as Units;
-  const params = await searchParams;
-  const period = (params.period ?? "1m") as Period;
-  const since = periodToDate(period);
+  useEffect(() => {
+    setLoading(true);
+    const typeParam = dataType;
+    Promise.all([
+      fetch(`/api/analytics?limit=${n}&type=${typeParam}`).then((r) => r.json()),
+      fetch(`/api/analytics?limit=${n}&type=laps`).then((r) => r.json()),
+    ]).then(([mainRes, lapsRes]) => {
+      const main: AnalyticsRecord[] = mainRes.activities ?? mainRes.laps ?? [];
+      const laps: AnalyticsRecord[] = lapsRes.laps ?? [];
+      setMainData(main);
+      setLapsData(laps);
+      setLoading(false);
+    }).catch(() => setLoading(false));
+  }, [n, dataType]);
 
-  const allInPeriod = await db.activity.findMany({
-    where: { userId: session.user.id, startTime: { gte: since } },
-    orderBy: { startTime: "asc" },
-    select: {
-      id: true,
-      startTime: true,
-      totalDistance: true,
-      totalMovingTime: true,
-      avgHeartRate: true,
-      avgCadence: true,
-      avgPower: true,
-      efficiencyScore: true,
-      avgVerticalOscillation: true,
-      avgGroundContactTime: true,
-      avgSpeed: true,
-    },
-  });
+  // Filtered sets for each chart
+  const efficiencyData = mainData.filter((d) => d.efficiencyScore != null) as Array<
+    AnalyticsRecord & { efficiencyScore: number }
+  >;
+  const speedPowerData = mainData.filter(
+    (d) => d.avgSpeed != null && d.avgPower != null
+  ) as Array<AnalyticsRecord & { avgPower: number }>;
 
-  const recentRuns = allInPeriod.slice(-5);
-  const baselineRuns = allInPeriod.slice(0, Math.max(0, allInPeriod.length - 5));
-  const sparklineRuns = allInPeriod.slice(-20);
+  const lapEfficiencyData = lapsData.filter((d) => d.efficiencyScore != null) as Array<
+    AnalyticsRecord & { efficiencyScore: number }
+  >;
 
-  const baseline = baselineRuns.length > 0 ? {
-    totalDistance: avg(baselineRuns.map((r) => r.totalDistance)),
-    avgSpeed: avg(baselineRuns.map((r) => r.avgSpeed)),
-    avgHeartRate: avg(baselineRuns.map((r) => r.avgHeartRate)),
-    avgCadence: avg(baselineRuns.map((r) => r.avgCadence)),
-    avgPower: avg(baselineRuns.map((r) => r.avgPower)),
-    efficiencyScore: avg(baselineRuns.map((r) => r.efficiencyScore)),
-    avgVerticalOscillation: avg(baselineRuns.map((r) => r.avgVerticalOscillation)),
-    avgGroundContactTime: avg(baselineRuns.map((r) => r.avgGroundContactTime)),
-  } : null;
-
-  const recentIds = new Set(recentRuns.map((r) => r.id));
-
-  const sparklineData = (key: keyof typeof sparklineRuns[0]) =>
-    sparklineRuns.map((r) => ({
-      value: r[key] as number | null,
-      isRecent: recentIds.has(r.id),
-    }));
-
-  // format is used only in the server-rendered table (never passed to client components)
-  const metrics = [
-    {
-      key: "totalDistance" as const,
-      label: "Distance",
-      unit: units === "imperial" ? "mi" : "km",
-      format: (v: number) => formatDistance(v, units),
-      baselineVal: baseline?.totalDistance ?? null,
-    },
-    {
-      key: "avgSpeed" as const,
-      label: "Avg Pace",
-      unit: units === "imperial" ? "/mi" : "/km",
-      format: (v: number) => formatPace(v, units),
-      baselineVal: baseline?.avgSpeed ?? null,
-    },
-    {
-      key: "avgHeartRate" as const,
-      label: "Avg HR",
-      unit: "bpm",
-      format: (v: number) => `${Math.round(v)} bpm`,
-      baselineVal: baseline?.avgHeartRate ?? null,
-    },
-    {
-      key: "avgCadence" as const,
-      label: "Cadence",
-      unit: "spm",
-      format: (v: number) => `${Math.round(v)} spm`,
-      baselineVal: baseline?.avgCadence ?? null,
-    },
-    {
-      key: "avgPower" as const,
-      label: "Avg Power",
-      unit: "W",
-      format: (v: number) => `${Math.round(v)} W`,
-      baselineVal: baseline?.avgPower ?? null,
-    },
-    {
-      key: "efficiencyScore" as const,
-      label: "Efficiency",
-      unit: "m/s/W",
-      format: (v: number) => v.toFixed(4),
-      baselineVal: baseline?.efficiencyScore ?? null,
-    },
-    {
-      key: "avgVerticalOscillation" as const,
-      label: "Vertical Osc.",
-      unit: "mm",
-      format: (v: number) => `${v.toFixed(1)} mm`,
-      baselineVal: baseline?.avgVerticalOscillation ?? null,
-    },
-    {
-      key: "avgGroundContactTime" as const,
-      label: "Ground Contact",
-      unit: "ms",
-      format: (v: number) => `${Math.round(v)} ms`,
-      baselineVal: baseline?.avgGroundContactTime ?? null,
-    },
-  ];
-
-  const periodOptions: { value: Period; label: string }[] = [
-    { value: "1m", label: "1 Month" },
-    { value: "3m", label: "3 Months" },
-    { value: "6m", label: "6 Months" },
-    { value: "1y", label: "1 Year" },
-  ];
+  const paceBounds: [number, number] = paceZoneBoundaries ?? [3.35, 4.47];
+  const cadBounds: [number, number] = cadenceZoneBoundaries ?? [160, 170];
 
   return (
     <Box>
       <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mb: 3 }}>
-        <Typography variant="h4">Trends</Typography>
-        <Box sx={{ display: "flex", gap: 1 }}>
-          {periodOptions.map((opt) => (
-            <Chip
-              key={opt.value}
-              label={opt.label}
-              component="a"
-              href={`/trends?period=${opt.value}`}
-              clickable
-              color={period === opt.value ? "primary" : "default"}
-              variant={period === opt.value ? "filled" : "outlined"}
-            />
-          ))}
+        <Typography variant="h4">Analytics</Typography>
+        <Box sx={{ display: "flex", gap: 2, alignItems: "center" }}>
+          <FormControl size="small" sx={{ minWidth: 80 }}>
+            <InputLabel>N</InputLabel>
+            <Select value={n} label="N" onChange={(e) => setN(Number(e.target.value))}>
+              <MenuItem value={10}>10</MenuItem>
+              <MenuItem value={25}>25</MenuItem>
+              <MenuItem value={50}>50</MenuItem>
+              <MenuItem value={100}>100</MenuItem>
+            </Select>
+          </FormControl>
+          <ToggleButtonGroup
+            value={dataType}
+            exclusive
+            onChange={(_, v) => { if (v) setDataType(v); }}
+            size="small"
+          >
+            <ToggleButton value="activities">Runs</ToggleButton>
+            <ToggleButton value="laps">Laps</ToggleButton>
+          </ToggleButtonGroup>
         </Box>
       </Box>
 
-      {recentRuns.length === 0 && (
-        <Typography color="text.secondary">
-          No activities in the selected period. Upload runs to see trends.
-        </Typography>
+      {loading && (
+        <Typography color="text.secondary">Loading data…</Typography>
       )}
 
-      {recentRuns.length > 0 && (
+      {!loading && (
         <>
-          <Typography variant="h6" gutterBottom>
-            Last {recentRuns.length} Runs vs. Baseline
-          </Typography>
-          <Box sx={{ overflowX: "auto", mb: 4 }}>
-            <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 14 }}>
-              <thead>
-                <tr style={{ borderBottom: "2px solid #e0e0e0" }}>
-                  <th style={{ padding: "8px 12px", textAlign: "left" }}>Date</th>
-                  {metrics.map((m) => (
-                    <th key={m.key} style={{ padding: "8px 12px", textAlign: "right" }}>
-                      {m.label}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {baseline && (
-                  <tr style={{ background: "#f5f5f5" }}>
-                    <td style={{ padding: "6px 12px", color: "#666" }}>Baseline avg</td>
-                    {metrics.map((m) => (
-                      <td key={m.key} style={{ padding: "6px 12px", textAlign: "right", color: "#666" }}>
-                        {m.baselineVal != null ? m.format(m.baselineVal) : "—"}
-                      </td>
-                    ))}
-                  </tr>
-                )}
-                {recentRuns.map((run) => (
-                  <tr key={run.id} style={{ borderBottom: "1px solid #eee" }}>
-                    <td style={{ padding: "6px 12px" }}>
-                      {new Date(run.startTime).toLocaleDateString()}
-                    </td>
-                    {metrics.map((m) => {
-                      const val = run[m.key] as number | null | undefined;
-                      return (
-                        <td key={m.key} style={{ padding: "6px 12px", textAlign: "right" }}>
-                          <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-                            {val != null ? m.format(val) : "—"}
-                            <DeltaIndicator
-                              current={val ?? null}
-                              baseline={m.baselineVal}
-                            />
-                          </span>
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </Box>
+          {/* Chart 1 — Efficiency Statistical Bands */}
+          <Paper sx={{ p: 2, mb: 3 }}>
+            <Typography variant="subtitle1" gutterBottom>
+              Efficiency Statistical Bands
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+              Last 10 data points plotted against ±1σ / ±2σ bands computed over all {n} {dataType}.
+            </Typography>
+            <EfficiencyBandChart data={efficiencyData} units={units} />
+          </Paper>
 
-          <Typography variant="h6" gutterBottom>
-            Metric Trends (last {sparklineRuns.length} runs)
-          </Typography>
-          <Grid container spacing={2}>
-            {metrics.map((m) => (
-              <Grid key={m.key} size={{ xs: 12, sm: 6, md: 3 }}>
-                <Paper sx={{ p: 1.5 }}>
-                  <Typography variant="caption" color="text.secondary">
-                    {m.label}
-                  </Typography>
-                  <MetricSparkline
-                    data={sparklineData(m.key)}
-                    baseline={m.baselineVal}
-                    label={m.label}
-                    unit={m.unit}
-                  />
-                </Paper>
-              </Grid>
-            ))}
-          </Grid>
+          {/* Chart 2 — Speed vs Power */}
+          <Paper sx={{ p: 2, mb: 3 }}>
+            <Typography variant="subtitle1" gutterBottom>
+              Speed vs Power
+            </Typography>
+            <SpeedPowerScatter data={speedPowerData} units={units} />
+          </Paper>
+
+          {/* Chart 3 — Efficiency by Pace Zone */}
+          <Paper sx={{ p: 2, mb: 3 }}>
+            <Typography variant="subtitle1" gutterBottom>
+              Efficiency by Pace Zone (laps)
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+              Laps classified by speed into Easy / Tempo / Threshold zones.{" "}
+              <Tooltip title="Configure pace zone boundaries in Settings → Training Zones">
+                <span style={{ cursor: "help", textDecoration: "underline dotted" }}>
+                  Edit boundaries in Settings
+                </span>
+              </Tooltip>
+            </Typography>
+            <ZoneEfficiencyChart
+              data={lapEfficiencyData.map((d) => ({
+                startTime: d.startTime,
+                efficiencyScore: d.efficiencyScore,
+                classifyValue: d.avgSpeed,
+              }))}
+              zoneBoundaries={paceBounds}
+              zoneLabels={["Easy", "Tempo", "Threshold"]}
+              yLabel="Efficiency ×1000"
+              units={units}
+            />
+          </Paper>
+
+          {/* Chart 3b — Efficiency by Pace Zone (D3) */}
+          <Paper sx={{ p: 2, mb: 3 }}>
+            <Typography variant="subtitle1" gutterBottom>
+              Efficiency by Pace Zone (laps)
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+              Laps classified by speed into Easy / Tempo / Threshold zones.{" "}
+              <Tooltip title="Configure pace zone boundaries in Settings → Training Zones">
+                <span style={{ cursor: "help", textDecoration: "underline dotted" }}>
+                  Edit boundaries in Settings
+                </span>
+              </Tooltip>
+            </Typography>
+            <D3PaceZoneChart
+              zoneBoundaries={paceBounds}
+              zoneLabels={["Easy", "Tempo", "Threshold"]}
+              units={units}
+            />
+          </Paper>
+
+          {/* Chart 4 — Efficiency by Cadence Zone */}
+          <Paper sx={{ p: 2, mb: 3 }}>
+            <Typography variant="subtitle1" gutterBottom>
+              Efficiency by Cadence Zone (laps)
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+              Laps classified by cadence into Low / Mid / High zones.{" "}
+              <Tooltip title="Configure cadence zone boundaries in Settings → Training Zones">
+                <span style={{ cursor: "help", textDecoration: "underline dotted" }}>
+                  Edit boundaries in Settings
+                </span>
+              </Tooltip>
+            </Typography>
+            <ZoneEfficiencyChart
+              data={lapEfficiencyData
+                .filter((d) => d.avgCadence != null)
+                .map((d) => ({
+                  startTime: d.startTime,
+                  efficiencyScore: d.efficiencyScore,
+                  classifyValue: d.avgCadence as number,
+                }))}
+              zoneBoundaries={cadBounds}
+              zoneLabels={["Low", "Mid", "High"]}
+              yLabel="Efficiency ×1000"
+              units={units}
+            />
+          </Paper>
         </>
       )}
     </Box>
