@@ -6,7 +6,8 @@
       "Bash(cd \"D:/Projects/running-app\" && npx tsc --noEmit 2>&1)",
       "Bash(ls:*)",
       "Bash(cd D:/Projects/running-app && npx tsc --noEmit 2>&1)",
-      "Bash(cd \"D:\\\\Projects\\\\running-app\" && npx tsc --noEmit 2>&1)"
+      "Bash(cd \"D:\\\\Projects\\\\running-app\" && npx tsc --noEmit 2>&1)",
+      "Bash(echo EXIT:$?:*)"
     ]
   },
   "plansDirectory": "./project-plans"

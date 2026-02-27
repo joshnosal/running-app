@@ -17,8 +17,8 @@ import type { ActivityRecord, LapRecord } from "@/types/analytics";
 const RUN_LIMIT_OPTIONS = [5, 10, 25, 50, 100] as const;
 type DataType = "activities" | "laps";
 
-const MS_TO_KMH = 3.6;
-const MS_TO_MPH = 2.23694;
+const SECS_PER_MILE = 1609.34;
+const SECS_PER_KM = 1000;
 
 interface ChartPoint {
   startTime: string;
@@ -28,7 +28,7 @@ interface ChartPoint {
   avgCadence: number | null;
   avgPower: number;
   efficiency: number;
-  displaySpeed: number; // in km/h or mph
+  displayPace: number; // seconds per mile or per km
 }
 
 interface TooltipData {
@@ -49,10 +49,58 @@ interface SelectedPoint {
   avgPower: number;
 }
 
+// ── LOWESS ─────────────────────────────────────────────────────────────────────
+// Locally weighted scatterplot smoothing using tricube kernel + local linear fit.
+function lowess(
+  points: { x: number; y: number }[],
+  bandwidth = 0.35
+): { x: number; y: number }[] {
+  const n = points.length;
+  if (n < 3) return points.map((p) => ({ x: p.x, y: p.y }));
+
+  const sorted = [...points].sort((a, b) => a.x - b.x);
+  const k = Math.max(3, Math.floor(bandwidth * n));
+
+  return sorted.map((_, i) => {
+    const xi = sorted[i].x;
+
+    // Find k nearest neighbors by x-distance
+    const dists = sorted.map((p, j) => ({ j, dist: Math.abs(p.x - xi) }));
+    dists.sort((a, b) => a.dist - b.dist);
+    const nbrs = dists.slice(0, k).map((d) => d.j);
+    const maxDist = Math.max(...nbrs.map((j) => Math.abs(sorted[j].x - xi)));
+
+    // Accumulate weighted sums for WLS
+    let sw = 0, swx = 0, swy = 0, swxx = 0, swxy = 0;
+    for (const j of nbrs) {
+      const u = maxDist > 0 ? Math.abs(sorted[j].x - xi) / maxDist : 0;
+      const w = Math.pow(1 - Math.pow(u, 3), 3); // tricube
+      sw += w;
+      swx += w * sorted[j].x;
+      swy += w * sorted[j].y;
+      swxx += w * sorted[j].x * sorted[j].x;
+      swxy += w * sorted[j].x * sorted[j].y;
+    }
+
+    const denom = sw * swxx - swx * swx;
+    let yFit: number;
+    if (Math.abs(denom) < 1e-12) {
+      yFit = swy / sw;
+    } else {
+      const b = (sw * swxy - swx * swy) / denom;
+      const a = (swy - b * swx) / sw;
+      yFit = a + b * xi;
+    }
+
+    return { x: xi, y: yFit };
+  });
+}
+
 // ── Layout ────────────────────────────────────────────────────────────────────
 const CHART_H = 220;
 const M = { top: 16, right: 20, bottom: 44, left: 60 } as const;
 const COLOR = "#26a69a"; // teal
+const TREND_COLOR = "#ef5350"; // red
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
@@ -89,7 +137,7 @@ export default function D3SpeedPowerScatter({
 
   // ── Derive chart data from props ───────────────────────────────────────────
   const chartData = useMemo<ChartPoint[]>(() => {
-    const factor = units === "imperial" ? MS_TO_MPH : MS_TO_KMH;
+    const paceDivisor = units === "imperial" ? SECS_PER_MILE : SECS_PER_KM;
     const source =
       dataType === "laps"
         ? (() => {
@@ -122,9 +170,15 @@ export default function D3SpeedPowerScatter({
         avgCadence: r.avgCadence != null ? r.avgCadence * 2 : null,
         avgPower: r.avgPower as number,
         efficiency: (r.avgSpeed / (r.avgPower as number)) * 10000,
-        displaySpeed: r.avgSpeed * factor,
+        displayPace: paceDivisor / r.avgSpeed,
       }));
   }, [activities, laps, runLimit, dataType, units]);
+
+  // ── LOWESS curve ───────────────────────────────────────────────────────────
+  const lowessCurve = useMemo(() => {
+    if (chartData.length < 3) return [];
+    return lowess(chartData.map((d) => ({ x: d.displayPace, y: d.efficiency })));
+  }, [chartData]);
 
   // ── Draw ───────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -138,20 +192,21 @@ export default function D3SpeedPowerScatter({
     const totalH = M.top + CHART_H + M.bottom;
     svg.attr("width", containerW).attr("height", totalH);
 
-    const speeds = chartData.map((d) => d.displaySpeed);
-    const powers = chartData.map((d) => d.avgPower);
-    const speedExtent = d3.extent(speeds) as [number, number];
-    const powerExtent = d3.extent(powers) as [number, number];
-    const speedPad = Math.max((speedExtent[1] - speedExtent[0]) * 0.08, 0.5);
-    const powerPad = Math.max((powerExtent[1] - powerExtent[0]) * 0.08, 5);
+    const paces = chartData.map((d) => d.displayPace);
+    const efficiencies = chartData.map((d) => d.efficiency);
+    const paceExtent = d3.extent(paces) as [number, number];
+    const effExtent = d3.extent(efficiencies) as [number, number];
+    const pacePad = Math.max((paceExtent[1] - paceExtent[0]) * 0.08, 5);
+    const effPad = Math.max((effExtent[1] - effExtent[0]) * 0.08, 0.1);
 
+    // X goes fast (low secs) → slow (high secs) left to right
     const xScale = d3.scaleLinear()
-      .domain([speedExtent[0] - speedPad, speedExtent[1] + speedPad])
+      .domain([paceExtent[0] - pacePad, paceExtent[1] + pacePad])
       .range([0, innerW])
       .nice();
 
     const yScale = d3.scaleLinear()
-      .domain([powerExtent[0] - powerPad, powerExtent[1] + powerPad])
+      .domain([effExtent[0] - effPad, effExtent[1] + effPad])
       .range([CHART_H, 0])
       .nice();
 
@@ -196,11 +251,17 @@ export default function D3SpeedPowerScatter({
     root.append("text")
       .attr("transform", `translate(${-M.left + 14},${CHART_H / 2}) rotate(-90)`)
       .attr("text-anchor", "middle").attr("fill", "#777").attr("font-size", 11)
-      .text("Power (W)");
+      .text("Efficiency (m·s/W ×10⁴)");
 
-    // X axis
-    const speedUnit = units === "imperial" ? "mph" : "km/h";
-    const xAxis = d3.axisBottom(xScale).ticks(6).tickSize(0);
+    // X axis — format ticks as MM:SS
+    const paceUnit = units === "imperial" ? "mi" : "km";
+    const formatPaceTick = (secs: number) => {
+      const m = Math.floor(secs / 60);
+      const s = Math.round(secs % 60);
+      return `${m}:${s.toString().padStart(2, "0")}`;
+    };
+    const xAxis = d3.axisBottom(xScale).ticks(6).tickSize(0)
+      .tickFormat((t) => formatPaceTick(t as number));
     const xG = root.append("g").attr("transform", `translate(0,${CHART_H})`).call(xAxis);
     xG.select(".domain").remove();
     xG.selectAll(".tick text").attr("fill", "#777").attr("font-size", 10).attr("dy", 12);
@@ -214,14 +275,31 @@ export default function D3SpeedPowerScatter({
     root.append("text")
       .attr("x", innerW / 2).attr("y", CHART_H + M.bottom - 6)
       .attr("text-anchor", "middle").attr("fill", "#777").attr("font-size", 11)
-      .text(`Speed (${speedUnit})`);
+      .text(`Pace (min/${paceUnit})`);
 
-    // Dots (clipped)
     const dataG = root.append("g").attr("clip-path", "url(#d3sp-clip)");
+
+    // LOWESS trend line
+    if (lowessCurve.length >= 2) {
+      const lineFn = d3.line<{ x: number; y: number }>()
+        .x((d) => xScale(d.x))
+        .y((d) => yScale(d.y))
+        .curve(d3.curveCatmullRom.alpha(0.5));
+
+      dataG.append("path")
+        .datum(lowessCurve)
+        .attr("fill", "none")
+        .attr("stroke", TREND_COLOR)
+        .attr("stroke-width", 2)
+        .attr("stroke-opacity", 0.85)
+        .attr("d", lineFn);
+    }
+
+    // Dots
     dataG.selectAll<SVGCircleElement, ChartPoint>(".dot")
       .data(chartData).join("circle").attr("class", "dot")
-      .attr("cx", (d) => xScale(d.displaySpeed))
-      .attr("cy", (d) => yScale(d.avgPower))
+      .attr("cx", (d) => xScale(d.displayPace))
+      .attr("cy", (d) => yScale(d.efficiency))
       .attr("r", 4).attr("fill", COLOR)
       .attr("stroke", "#fff").attr("stroke-width", 1.5)
       .style("cursor", "pointer")
@@ -267,7 +345,7 @@ export default function D3SpeedPowerScatter({
       .attr("fill", "none").attr("stroke", "#bbb").attr("stroke-width", 1);
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chartData, containerW, units]);
+  }, [chartData, lowessCurve, containerW, units]);
 
 
   return (

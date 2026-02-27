@@ -9,7 +9,6 @@ import ListItemText from "@mui/material/ListItemText";
 import Toolbar from "@mui/material/Toolbar";
 import DashboardIcon from "@mui/icons-material/Dashboard";
 import DirectionsRunIcon from "@mui/icons-material/DirectionsRun";
-import UploadFileIcon from "@mui/icons-material/UploadFile";
 import TrendingUpIcon from "@mui/icons-material/TrendingUp";
 import SettingsIcon from "@mui/icons-material/Settings";
 import { useRouter, usePathname } from "next/navigation";
@@ -19,7 +18,6 @@ export const DRAWER_WIDTH = 220;
 const navItems = [
   { label: "Dashboard", href: "/dashboard", icon: <DashboardIcon /> },
   { label: "Activities", href: "/activities", icon: <DirectionsRunIcon /> },
-  { label: "Upload", href: "/upload", icon: <UploadFileIcon /> },
   { label: "Trends", href: "/trends", icon: <TrendingUpIcon /> },
   { label: "Settings", href: "/settings", icon: <SettingsIcon /> },
 ];

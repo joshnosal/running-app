@@ -65,7 +65,7 @@ export default function TrendsPage() {
       </Paper>
 
       <Paper sx={{ p: 2, mb: 3 }}>
-        <Typography variant="subtitle1" gutterBottom>Speed vs Power</Typography>
+        <Typography variant="subtitle1" gutterBottom>Speed vs Efficiency</Typography>
         <D3SpeedPowerScatter units={units} activities={activities} laps={laps} />
       </Paper>
 

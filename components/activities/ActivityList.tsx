@@ -9,7 +9,9 @@ import Checkbox from "@mui/material/Checkbox";
 import Button from "@mui/material/Button";
 import Paper from "@mui/material/Paper";
 import CircularProgress from "@mui/material/CircularProgress";
+import UploadFileIcon from "@mui/icons-material/UploadFile";
 import ActivityCard from "./ActivityCard";
+import UploadDialog from "./UploadDialog";
 import type { Units } from "@/lib/units";
 
 interface Activity {
@@ -32,12 +34,31 @@ export default function ActivityList({ activities, units }: ActivityListProps) {
   const router = useRouter();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [deleting, setDeleting] = useState(false);
+  const [uploadOpen, setUploadOpen] = useState(false);
+
+  function handleUploadClose(didImport: boolean) {
+    setUploadOpen(false);
+    if (didImport) router.refresh();
+  }
 
   if (activities.length === 0) {
     return (
-      <Typography color="text.secondary" sx={{ textAlign: "center", py: 4 }}>
-        No activities found. Upload a .fit file to get started.
-      </Typography>
+      <>
+        <Box sx={{ textAlign: "center", py: 6 }}>
+          <Typography color="text.secondary" gutterBottom>
+            No activities found. Upload a .fit file to get started.
+          </Typography>
+          <Button
+            variant="contained"
+            startIcon={<UploadFileIcon />}
+            onClick={() => setUploadOpen(true)}
+            sx={{ mt: 1 }}
+          >
+            Upload Activities
+          </Button>
+        </Box>
+        <UploadDialog open={uploadOpen} onClose={handleUploadClose} />
+      </>
     );
   }
 
@@ -102,7 +123,7 @@ export default function ActivityList({ activities, units }: ActivityListProps) {
             ? `${selected.size} selected`
             : `${activities.length} activit${activities.length !== 1 ? "ies" : "y"}`}
         </Typography>
-        {selected.size > 0 && (
+        {selected.size > 0 ? (
           <Button
             size="small"
             color="error"
@@ -112,6 +133,15 @@ export default function ActivityList({ activities, units }: ActivityListProps) {
             startIcon={deleting ? <CircularProgress size={14} /> : undefined}
           >
             {deleting ? "Deleting…" : `Delete ${selected.size}`}
+          </Button>
+        ) : (
+          <Button
+            size="small"
+            variant="outlined"
+            startIcon={<UploadFileIcon />}
+            onClick={() => setUploadOpen(true)}
+          >
+            Upload
           </Button>
         )}
       </Paper>
@@ -135,6 +165,8 @@ export default function ActivityList({ activities, units }: ActivityListProps) {
           </Box>
         ))}
       </Stack>
+
+      <UploadDialog open={uploadOpen} onClose={handleUploadClose} />
     </Box>
   );
 }
