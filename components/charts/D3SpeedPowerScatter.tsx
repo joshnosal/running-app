@@ -119,7 +119,7 @@ export default function D3SpeedPowerScatter({
   const [containerW, setContainerW] = useState(0);
   const [selected, setSelected] = useState<SelectedPoint | null>(null);
   const [runLimit, setRunLimit] = useState(10);
-  const [dataType, setDataType] = useState<DataType>("activities");
+  const [dataType, setDataType] = useState<DataType>("laps");
 
   // ── ResizeObserver ─────────────────────────────────────────────────────────
   useEffect(() => {

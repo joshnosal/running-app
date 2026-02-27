@@ -71,7 +71,7 @@ export default function D3EfficiencyBandChart({
   const [selected, setSelected] = useState<SelectedPoint | null>(null);
   const [runLimit, setRunLimit] = useState(10);
   const [sdBasis, setSdBasis] = useState(25);
-  const [dataType, setDataType] = useState<DataType>("activities");
+  const [dataType, setDataType] = useState<DataType>("laps");
 
   // ── ResizeObserver ─────────────────────────────────────────────────────────
   useEffect(() => {
@@ -328,6 +328,19 @@ export default function D3EfficiencyBandChart({
   return (
     <div style={{ width: "100%" }}>
       <Box sx={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 2, mb: 1, flexWrap: "wrap" }}>
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+          <Typography variant="body2" color="text.secondary">σ Runs:</Typography>
+          <Select
+            size="small"
+            value={sdBasis}
+            onChange={(e) => setSdBasis(Number(e.target.value))}
+            sx={{ minWidth: 72 }}
+          >
+            {RUN_LIMIT_OPTIONS.map((v) => (
+              <MenuItem key={v} value={v}>{v}</MenuItem>
+            ))}
+          </Select>
+        </Box>
         <ToggleButtonGroup
           value={dataType}
           exclusive
@@ -343,19 +356,6 @@ export default function D3EfficiencyBandChart({
             size="small"
             value={runLimit}
             onChange={(e) => setRunLimit(Number(e.target.value))}
-            sx={{ minWidth: 72 }}
-          >
-            {RUN_LIMIT_OPTIONS.map((v) => (
-              <MenuItem key={v} value={v}>{v}</MenuItem>
-            ))}
-          </Select>
-        </Box>
-        <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-          <Typography variant="body2" color="text.secondary">σ Runs:</Typography>
-          <Select
-            size="small"
-            value={sdBasis}
-            onChange={(e) => setSdBasis(Number(e.target.value))}
             sx={{ minWidth: 72 }}
           >
             {RUN_LIMIT_OPTIONS.map((v) => (

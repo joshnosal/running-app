@@ -27,7 +27,7 @@ export default function D3HRZoneChart({ data }: { data: WeekData[] }) {
   const [containerW, setContainerW] = useState(0);
   const [tooltip, setTooltip] = useState<{
     x: number; y: number; week: string;
-    zones: { label: string; mins: number; color: string }[];
+    zones: { label: string; mins: number; pct: number; color: string }[];
   } | null>(null);
 
   useEffect(() => {
@@ -102,9 +102,11 @@ export default function D3HRZoneChart({ data }: { data: WeekData[] }) {
         .style("cursor", "pointer")
         .on("mouseenter", (event: MouseEvent, d) => {
           const rect = svgEl.getBoundingClientRect();
+          const totalSecs = ZONE_KEYS.reduce((s, k) => s + d.data[k], 0);
           const zones = ZONE_KEYS.map((k, j) => ({
             label: ZONE_LABELS[j],
             mins: Math.round(d.data[k] / 60),
+            pct: totalSecs > 0 ? Math.round((d.data[k] / totalSecs) * 100) : 0,
             color: ZONE_COLORS[j],
           }));
           setTooltip({ x: event.clientX - rect.left, y: event.clientY - rect.top, week: d.data.week, zones });
@@ -152,9 +154,9 @@ export default function D3HRZoneChart({ data }: { data: WeekData[] }) {
           boxShadow: "0 3px 10px rgba(0,0,0,0.4)",
         }}>
           <div style={{ color: "#999", fontSize: 11, marginBottom: 2 }}>{tooltip.week}</div>
-          {tooltip.zones.map(({ label, mins, color }) => (
+          {tooltip.zones.map(({ label, mins, pct, color }) => (
             <div key={label}>
-              <span style={{ color }}>{label}:</span> <strong>{mins} min</strong>
+              <span style={{ color }}>{label}:</span> <strong>{mins} min ({pct}%)</strong>
             </div>
           ))}
         </div>
