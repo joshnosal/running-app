@@ -11,10 +11,10 @@ import Chip from "@mui/material/Chip";
 import TrendingUpIcon from "@mui/icons-material/TrendingUp";
 import TrendingDownIcon from "@mui/icons-material/TrendingDown";
 import RemoveIcon from "@mui/icons-material/Remove";
-import WeeklyMileageChart from "@/components/charts/WeeklyMileageChart";
-import EfficiencyTrendChart from "@/components/charts/EfficiencyTrendChart";
-import HRZoneChart from "@/components/charts/HRZoneChart";
-import MetricSparkline from "@/components/charts/MetricSparkline";
+import D3WeeklyMileageChart from "@/components/charts/D3WeeklyMileageChart";
+import D3EfficiencyTrendChart from "@/components/charts/D3EfficiencyTrendChart";
+import D3HRZoneChart from "@/components/charts/D3HRZoneChart";
+import D3MetricSparkline from "@/components/charts/D3MetricSparkline";
 import { formatDistance, formatDuration, formatPace, type Units } from "@/lib/units";
 
 type Period = "1m" | "3m" | "6m" | "1y";
@@ -266,7 +266,7 @@ export default async function DashboardPage({
             <Typography variant="subtitle1" gutterBottom>
               Weekly Mileage (12 weeks)
             </Typography>
-            <WeeklyMileageChart data={weeklyMileageData} units={units} />
+            <D3WeeklyMileageChart data={weeklyMileageData} units={units} />
           </Paper>
         </Grid>
         <Grid size={{ xs: 12, md: 6 }}>
@@ -274,7 +274,7 @@ export default async function DashboardPage({
             <Typography variant="subtitle1" gutterBottom>
               Efficiency Trend
             </Typography>
-            <EfficiencyTrendChart data={efficiencyData} />
+            <D3EfficiencyTrendChart data={efficiencyData} />
           </Paper>
         </Grid>
         <Grid size={{ xs: 12 }}>
@@ -282,7 +282,7 @@ export default async function DashboardPage({
             <Typography variant="subtitle1" gutterBottom>
               HR Zone Distribution (12 weeks)
             </Typography>
-            <HRZoneChart data={hrZoneData} />
+            <D3HRZoneChart data={hrZoneData} />
           </Paper>
         </Grid>
       </Grid>
@@ -371,7 +371,7 @@ export default async function DashboardPage({
                   <Typography variant="caption" color="text.secondary">
                     {m.label}
                   </Typography>
-                  <MetricSparkline
+                  <D3MetricSparkline
                     data={sparklineData(m.key)}
                     baseline={m.baselineVal}
                     label={m.label}

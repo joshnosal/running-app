@@ -53,6 +53,8 @@ This is a **running analytics app** that ingests Garmin `.fit` files and visuali
 - Recharts charts: `WeeklyMileageChart`, `EfficiencyTrendChart`, `HRZoneChart`, `MetricSparkline`, `SpeedPowerScatter`, `EfficiencyBandChart`, `ZoneEfficiencyChart`.
 - D3 charts: `D3PaceZoneChart`, `D3EfficiencyBandChart`, `D3SpeedPowerScatter`, `D3CadenceZoneChart`.
 - The Trends page (`app/(app)/trends/page.tsx`) currently renders both versions side-by-side for comparison.
+- **Cadence convention**: FIT/Garmin stores one-foot cadence; all chart code multiplies by 2 to get total steps/min. User-facing zone boundaries are also in total steps/min.
+- **Lap filtering**: `GET /api/analytics` excludes laps with `totalDistance < 25 m` (warm-up/cooldown artifacts). Apply `totalDistance: { gte: 25 }` to any future Prisma lap queries that feed charts.
 
 ## Key Gotchas
 

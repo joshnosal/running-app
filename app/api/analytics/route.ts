@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
       const activityIds = recentActivities.map((a) => a.id);
 
       const laps = await db.lap.findMany({
-        where: { activityId: { in: activityIds } },
+        where: { activityId: { in: activityIds }, totalDistance: { gte: 25 } },
         orderBy: [{ activity: { startTime: "desc" } }, { lapNumber: "asc" }],
         include: { activity: { select: { startTime: true } } },
       });
@@ -52,7 +52,7 @@ export async function GET(request: NextRequest) {
     }
 
     const laps = await db.lap.findMany({
-      where: { activity: { userId: session.user.id } },
+      where: { activity: { userId: session.user.id }, totalDistance: { gte: 25 } },
       orderBy: [{ activity: { startTime: "desc" } }, { lapNumber: "asc" }],
       take: limit,
       include: { activity: { select: { startTime: true } } },
@@ -82,6 +82,7 @@ export async function GET(request: NextRequest) {
     select: {
       id: true,
       startTime: true,
+      totalDistance: true,
       avgSpeed: true,
       avgPower: true,
       avgCadence: true,
@@ -94,6 +95,7 @@ export async function GET(request: NextRequest) {
     activities: activities.map((a) => ({
       id: a.id,
       startTime: a.startTime.toISOString(),
+      totalDistance: a.totalDistance,
       avgSpeed: a.avgSpeed,
       avgPower: a.avgPower,
       avgCadence: a.avgCadence,

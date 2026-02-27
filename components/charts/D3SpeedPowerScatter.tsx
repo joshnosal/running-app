@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as d3 from "d3";
 import Dialog from "@mui/material/Dialog";
 import DialogTitle from "@mui/material/DialogTitle";
@@ -11,7 +11,8 @@ import Select from "@mui/material/Select";
 import MenuItem from "@mui/material/MenuItem";
 import ToggleButton from "@mui/material/ToggleButton";
 import ToggleButtonGroup from "@mui/material/ToggleButtonGroup";
-import { formatPace, type Units } from "@/lib/units";
+import { formatPace, formatDistance, type Units } from "@/lib/units";
+import type { ActivityRecord, LapRecord } from "@/types/analytics";
 
 const RUN_LIMIT_OPTIONS = [5, 10, 25, 50, 100] as const;
 type DataType = "activities" | "laps";
@@ -19,19 +20,14 @@ type DataType = "activities" | "laps";
 const MS_TO_KMH = 3.6;
 const MS_TO_MPH = 2.23694;
 
-interface ApiRecord {
-  id: string;
-  activityId?: string;
-  startTime: string;
-  avgSpeed: number;
-  avgPower: number | null;
-}
-
 interface ChartPoint {
   startTime: string;
   activityId: string;
+  totalDistance: number;
   avgSpeed: number;
+  avgCadence: number | null;
   avgPower: number;
+  efficiency: number;
   displaySpeed: number; // in km/h or mph
 }
 
@@ -39,7 +35,10 @@ interface TooltipData {
   svgX: number;
   svgY: number;
   avgSpeed: number;
+  avgCadence: number | null;
   avgPower: number;
+  efficiency: number;
+  totalDistance: number;
   date: string;
 }
 
@@ -57,7 +56,15 @@ const COLOR = "#26a69a"; // teal
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export default function D3SpeedPowerScatter({ units }: { units: Units }) {
+export default function D3SpeedPowerScatter({
+  units,
+  activities,
+  laps,
+}: {
+  units: Units;
+  activities: ActivityRecord[];
+  laps: LapRecord[];
+}) {
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [tooltip, setTooltip] = useState<TooltipData | null>(null);
@@ -65,8 +72,6 @@ export default function D3SpeedPowerScatter({ units }: { units: Units }) {
   const [selected, setSelected] = useState<SelectedPoint | null>(null);
   const [runLimit, setRunLimit] = useState(10);
   const [dataType, setDataType] = useState<DataType>("activities");
-  const [chartData, setChartData] = useState<ChartPoint[]>([]);
-  const [fetching, setFetching] = useState(true);
 
   // ── ResizeObserver ─────────────────────────────────────────────────────────
   useEffect(() => {
@@ -82,39 +87,44 @@ export default function D3SpeedPowerScatter({ units }: { units: Units }) {
     return () => ro.disconnect();
   }, []);
 
-  // ── Fetch ──────────────────────────────────────────────────────────────────
-  useEffect(() => {
-    let cancelled = false;
-    setFetching(true);
-    const url =
+  // ── Derive chart data from props ───────────────────────────────────────────
+  const chartData = useMemo<ChartPoint[]>(() => {
+    const factor = units === "imperial" ? MS_TO_MPH : MS_TO_KMH;
+    const source =
       dataType === "laps"
-        ? `/api/analytics?runs=${runLimit}&type=laps`
-        : `/api/analytics?limit=${runLimit}&type=activities`;
-    fetch(url)
-      .then((r) => r.json())
-      .then((res) => {
-        if (cancelled) return;
-        const records: ApiRecord[] = res.activities ?? res.laps ?? [];
-        const factor = units === "imperial" ? MS_TO_MPH : MS_TO_KMH;
-        const points: ChartPoint[] = records
-          .filter((r) => r.avgPower != null && r.avgPower > 0 && r.avgSpeed > 0)
-          .map((r) => ({
-            startTime: r.startTime,
-            activityId: r.activityId ?? r.id,
-            avgSpeed: r.avgSpeed,
-            avgPower: r.avgPower as number,
-            displaySpeed: r.avgSpeed * factor,
+        ? (() => {
+            const activeIds = new Set(activities.slice(0, runLimit).map((a) => a.id));
+            return laps.filter((l) => activeIds.has(l.activityId)).map((l) => ({
+              startTime: l.startTime,
+              activityId: l.activityId,
+              totalDistance: l.totalDistance,
+              avgSpeed: l.avgSpeed,
+              avgCadence: l.avgCadence,
+              avgPower: l.avgPower,
+            }));
+          })()
+        : activities.slice(0, runLimit).map((a) => ({
+            startTime: a.startTime,
+            activityId: a.id,
+            totalDistance: a.totalDistance,
+            avgSpeed: a.avgSpeed,
+            avgCadence: a.avgCadence,
+            avgPower: a.avgPower,
           }));
-        setChartData(points);
-        setFetching(false);
-      })
-      .catch(() => {
-        if (!cancelled) setFetching(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [runLimit, dataType, units]);
+
+    return source
+      .filter((r) => r.avgPower != null && r.avgPower > 0 && r.avgSpeed > 0)
+      .map((r) => ({
+        startTime: r.startTime,
+        activityId: r.activityId,
+        totalDistance: r.totalDistance,
+        avgSpeed: r.avgSpeed,
+        avgCadence: r.avgCadence != null ? r.avgCadence * 2 : null,
+        avgPower: r.avgPower as number,
+        efficiency: (r.avgSpeed / (r.avgPower as number)) * 10000,
+        displaySpeed: r.avgSpeed * factor,
+      }));
+  }, [activities, laps, runLimit, dataType, units]);
 
   // ── Draw ───────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -222,7 +232,10 @@ export default function D3SpeedPowerScatter({ units }: { units: Units }) {
           svgX: event.clientX - rect.left,
           svgY: event.clientY - rect.top,
           avgSpeed: d.avgSpeed,
+          avgCadence: d.avgCadence,
           avgPower: d.avgPower,
+          efficiency: d.efficiency,
+          totalDistance: d.totalDistance,
           date: new Date(d.startTime).toLocaleDateString(),
         });
       })
@@ -256,10 +269,6 @@ export default function D3SpeedPowerScatter({ units }: { units: Units }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chartData, containerW, units]);
 
-  function tooltipLeft(svgX: number) {
-    const tipW = 200;
-    return svgX + 14 + tipW > containerW ? svgX - tipW - 10 : svgX + 14;
-  }
 
   return (
     <div style={{ width: "100%" }}>
@@ -288,10 +297,7 @@ export default function D3SpeedPowerScatter({ units }: { units: Units }) {
         </Box>
       </Box>
 
-      {fetching && (
-        <Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>Loading…</Typography>
-      )}
-      {!fetching && chartData.length === 0 && (
+      {chartData.length === 0 && (
         <Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>
           No data with speed and power available.
         </Typography>
@@ -303,7 +309,9 @@ export default function D3SpeedPowerScatter({ units }: { units: Units }) {
         {tooltip && (
           <div style={{
             position: "absolute",
-            left: tooltipLeft(tooltip.svgX),
+            ...(tooltip.svgX + 14 + 180 > containerW
+              ? { right: containerW - tooltip.svgX + 14, left: undefined }
+              : { left: tooltip.svgX + 14, right: undefined }),
             top: tooltip.svgY - 16,
             pointerEvents: "none",
             background: "rgba(22,22,22,0.92)",
@@ -316,8 +324,11 @@ export default function D3SpeedPowerScatter({ units }: { units: Units }) {
             boxShadow: "0 3px 10px rgba(0,0,0,0.4)",
           }}>
             <div style={{ color: "#999", fontSize: 11, marginBottom: 2 }}>{tooltip.date}</div>
+            <div>Distance: <strong>{formatDistance(tooltip.totalDistance, units)}</strong></div>
             <div>Speed: <strong>{formatPace(tooltip.avgSpeed, units)}</strong></div>
+            {tooltip.avgCadence != null && <div>Cadence: <strong>{Math.round(tooltip.avgCadence)} spm</strong></div>}
             <div>Power: <strong>{Math.round(tooltip.avgPower)} W</strong></div>
+            <div>Efficiency: <strong>{tooltip.efficiency.toFixed(2)}</strong></div>
           </div>
         )}
 

@@ -14,7 +14,7 @@ import TableBody from "@mui/material/TableBody";
 import TableRow from "@mui/material/TableRow";
 import TableCell from "@mui/material/TableCell";
 import Alert from "@mui/material/Alert";
-import HRZoneChart from "@/components/charts/HRZoneChart";
+import D3HRZoneChart from "@/components/charts/D3HRZoneChart";
 import DeleteActivityButton from "@/components/activities/DeleteActivityButton";
 import {
   formatDistance,
@@ -141,7 +141,7 @@ export default async function ActivityDetailPage({
           <Typography variant="subtitle1" gutterBottom>
             HR Zone Breakdown
           </Typography>
-          <HRZoneChart data={hrZoneData} />
+          <D3HRZoneChart data={hrZoneData} />
         </Paper>
       )}
 
