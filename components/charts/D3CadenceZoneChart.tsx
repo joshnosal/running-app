@@ -9,7 +9,7 @@ import Typography from "@mui/material/Typography";
 import Box from "@mui/material/Box";
 import Select from "@mui/material/Select";
 import MenuItem from "@mui/material/MenuItem";
-import { formatPace, formatDistance, type Units } from "@/lib/units";
+import { formatPace, type Units } from "@/lib/units";
 
 const RUN_LIMIT_OPTIONS = [5, 10, 25, 50, 100] as const;
 
@@ -19,9 +19,9 @@ interface LapApiRecord {
   activityId: string;
   lapNumber: number;
   startTime: string;
-  totalDistance: number;
   avgSpeed: number;
   avgPower: number | null;
+  avgCadence: number | null;
 }
 
 // Internal point shape used by the drawing logic
@@ -29,15 +29,15 @@ interface ChartPoint {
   startTime: string;
   activityId: string;
   lapNumber: number;
-  totalDistance: number;
-  classifyValue: number; // avgSpeed m/s — determines zone
+  classifyValue: number; // avgCadence spm — determines zone
   avgSpeed: number;
-  avgPower: number | null;
+  avgPower: number;
+  avgCadence: number;
 }
 
 interface Props {
-  zoneBoundaries: [number, number];
-  zoneLabels: [string, string, string]; // [easy, tempo, threshold]
+  zoneBoundaries: [number, number]; // [low→mid, mid→high] thresholds in spm
+  zoneLabels: [string, string, string]; // [low, mid, high]
   units: Units;
 }
 
@@ -47,7 +47,7 @@ interface TooltipData {
   efficiency: number;
   avgSpeed: number;
   avgPower: number;
-  totalDistance: number;
+  avgCadence: number;
   date: string;
 }
 
@@ -57,48 +57,41 @@ interface SelectedPoint {
   lapNumber: number;
   avgSpeed: number;
   avgPower: number;
+  avgCadence: number;
   efficiency: number;
 }
 
 // ── Layout ────────────────────────────────────────────────────────────────────
 const PANEL_H = 150;
 const M = { top: 12, right: 20, bottom: 36, left: 88 } as const;
-// Left margin: [0–26] = rotated zone label, [26–88] = Y axis area
 const LABEL_NAME_X = 9;
 const LABEL_RANGE_X = 22;
 
-// Zone colours: index matches classification (0=easy, 1=tempo, 2=threshold)
+// Zone colours: index matches classification (0=low, 1=mid, 2=high)
 const COLORS = ["#43a047", "#fb8c00", "#e53935"] as const;
 
-// Display order (top → bottom): Threshold, Tempo, Easy
-// DISPLAY_ORDER[panelIndex] = zoneIndex
+// Display order (top → bottom): High, Mid, Low
 const DISPLAY_ORDER = [2, 1, 0] as const;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-/** Strips the "/km" or "/mi" suffix from formatPace output */
-function paceOnly(mps: number, units: Units): string {
-  return formatPace(mps, units).replace(/ \/.*$/, "");
-}
-
 /**
- * Human-readable pace range for each zone.
- * Zone 0 (easy)      = slow speed  → pace > upper bound  → "> 7:28 /km"
- * Zone 1 (tempo)     = mid speed   → pace between bounds → "5:37–7:28 /km"
- * Zone 2 (threshold) = fast speed  → pace < lower bound  → "< 5:37 /km"
+ * Human-readable cadence range for each zone.
+ * Zone 0 (low)  = cadence < boundary[0]  → "< 160 spm"
+ * Zone 1 (mid)  = boundary[0] ≤ cadence < boundary[1] → "160–170 spm"
+ * Zone 2 (high) = cadence ≥ boundary[1]  → "≥ 170 spm"
  */
-function zoneRange(z: 0 | 1 | 2, bounds: [number, number], units: Units): string {
-  const unit = units === "imperial" ? "/mi" : "/km";
-  const b0 = paceOnly(bounds[0], units); // pace at slower boundary
-  const b1 = paceOnly(bounds[1], units); // pace at faster boundary
-  if (z === 0) return `> ${b0} ${unit}`;
-  if (z === 1) return `${b1}–${b0} ${unit}`;
-  return `< ${b1} ${unit}`;
+function cadenceRange(z: 0 | 1 | 2, bounds: [number, number]): string {
+  const b0 = Math.round(bounds[0]);
+  const b1 = Math.round(bounds[1]);
+  if (z === 0) return `< ${b0} spm`;
+  if (z === 1) return `${b0}–${b1} spm`;
+  return `≥ ${b1} spm`;
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export default function D3PaceZoneChart({ zoneBoundaries, zoneLabels, units }: Props) {
+export default function D3CadenceZoneChart({ zoneBoundaries, zoneLabels, units }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [tooltip, setTooltip] = useState<TooltipData | null>(null);
@@ -108,6 +101,7 @@ export default function D3PaceZoneChart({ zoneBoundaries, zoneLabels, units }: P
   const [chartData, setChartData] = useState<ChartPoint[]>([]);
   const [fetching, setFetching] = useState(true);
 
+  // ── ResizeObserver ─────────────────────────────────────────────────────────
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -121,7 +115,7 @@ export default function D3PaceZoneChart({ zoneBoundaries, zoneLabels, units }: P
     return () => ro.disconnect();
   }, []);
 
-  // ── Fetch laps for the selected number of runs ───────────────────────────
+  // ── Fetch laps for the selected number of runs ─────────────────────────────
   useEffect(() => {
     let cancelled = false;
     setFetching(true);
@@ -131,29 +125,36 @@ export default function D3PaceZoneChart({ zoneBoundaries, zoneLabels, units }: P
         if (cancelled) return;
         const laps: LapApiRecord[] = res.laps ?? [];
         setChartData(
-          laps.map((lap) => ({
-            startTime: lap.startTime,
-            activityId: lap.activityId,
-            lapNumber: lap.lapNumber,
-            totalDistance: lap.totalDistance,
-            classifyValue: lap.avgSpeed,
-            avgSpeed: lap.avgSpeed,
-            avgPower: lap.avgPower,
-          }))
+          laps
+            .filter((lap) => lap.avgCadence != null && lap.avgPower != null && lap.avgPower > 0)
+            .map((lap) => ({
+              startTime: lap.startTime,
+              activityId: lap.activityId,
+              lapNumber: lap.lapNumber,
+              classifyValue: lap.avgCadence as number,
+              avgSpeed: lap.avgSpeed,
+              avgPower: lap.avgPower as number,
+              avgCadence: lap.avgCadence as number,
+            }))
         );
         setFetching(false);
       })
-      .catch(() => { if (!cancelled) setFetching(false); });
-    return () => { cancelled = true; };
+      .catch(() => {
+        if (!cancelled) setFetching(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [runLimit]);
 
+  // ── Draw ───────────────────────────────────────────────────────────────────
   useEffect(() => {
     const svgEl = svgRef.current;
     if (!svgEl || containerW === 0 || chartData.length === 0) return;
 
-    // Filter to points that have valid power (required for efficiency formula)
-    type ValidPoint = ChartPoint & { avgPower: number };
-    const valid = chartData.filter((d): d is ValidPoint => d.avgPower != null && d.avgPower > 0);
+    // Filter to points with valid cadence and power
+    const valid = chartData; // already filtered on fetch
+
     if (valid.length === 0) return;
 
     const svg = d3.select(svgEl);
@@ -163,19 +164,19 @@ export default function D3PaceZoneChart({ zoneBoundaries, zoneLabels, units }: P
     const totalH = M.top + 3 * PANEL_H + M.bottom;
     svg.attr("width", containerW).attr("height", totalH);
 
-    // ── Sort: by activity date ASC, then by lapNumber ASC within an activity ──
-    // This produces a stable chronological order where each lap is one "slot".
+    // ── Sort: by activity date ASC, then by lapNumber ASC ─────────────────────
     const allSorted = [...valid].sort((a, b) => {
       const tDiff = +new Date(a.startTime) - +new Date(b.startTime);
       return tDiff !== 0 ? tDiff : a.lapNumber - b.lapNumber;
     });
 
     // Assign a global sequential index to every lap
+    type ValidPoint = ChartPoint;
     const globalIdxOf = new Map<ValidPoint, number>();
     allSorted.forEach((d, i) => globalIdxOf.set(d, i));
     const n = allSorted.length;
 
-    // ── Classify laps and attach global index + efficiency ────────────────────
+    // ── Classify laps and attach global index + efficiency ─────────────────────
     type Classified = ValidPoint & { zone: 0 | 1 | 2; efficiency: number; globalIdx: number };
     const classified: Classified[] = valid.map((d) => ({
       ...d,
@@ -189,8 +190,6 @@ export default function D3PaceZoneChart({ zoneBoundaries, zoneLabels, units }: P
     classified.forEach((d) => buckets[d.zone].push(d));
 
     // ── Equal-spacing X scale ─────────────────────────────────────────────────
-    // Each lap occupies one equally-wide slot regardless of real elapsed time.
-    // Domain: [-0.5, n-0.5] so the outermost dots have half a slot of padding.
     const xScale = d3.scaleLinear()
       .domain([-0.5, n - 0.5])
       .range([0, innerW]);
@@ -206,8 +205,7 @@ export default function D3PaceZoneChart({ zoneBoundaries, zoneLabels, units }: P
       .nice();
     const yTicks = yScale.ticks(4);
 
-    // ── Identify the first lap (lowest globalIdx) of each activity ─────────────
-    // These positions drive both the vertical grid lines and the X-axis labels.
+    // ── Identify first lap of each activity ────────────────────────────────────
     const actFirstIdx = new Map<string, number>(); // activityId → globalIdx
     allSorted.forEach((d, i) => {
       if (!actFirstIdx.has(d.activityId)) actFirstIdx.set(d.activityId, i);
@@ -216,11 +214,11 @@ export default function D3PaceZoneChart({ zoneBoundaries, zoneLabels, units }: P
       .map(([actId, idx]) => ({ actId, idx, date: new Date(allSorted[idx]!.startTime) }))
       .sort((a, b) => a.idx - b.idx);
 
-    // ── Clip-path defs ────────────────────────────────────────────────────────
+    // ── Clip-path defs ─────────────────────────────────────────────────────────
     const defs = svg.append("defs");
     ([0, 1, 2] as const).forEach((panelIdx) => {
       defs.append("clipPath")
-        .attr("id", `d3pz-clip-${panelIdx}`)
+        .attr("id", `d3cz-clip-${panelIdx}`)
         .append("rect")
         .attr("x", 0).attr("y", 0)
         .attr("width", innerW).attr("height", PANEL_H);
@@ -228,7 +226,7 @@ export default function D3PaceZoneChart({ zoneBoundaries, zoneLabels, units }: P
 
     const root = svg.append("g").attr("transform", `translate(${M.left},${M.top})`);
 
-    // ── Draw panels top-to-bottom: Threshold → Tempo → Easy ───────────────────
+    // ── Draw panels top-to-bottom: High → Mid → Low ────────────────────────────
     DISPLAY_ORDER.forEach((zoneIdx, panelIdx) => {
       const panelTop = panelIdx * PANEL_H;
       const g = root.append("g").attr("transform", `translate(0,${panelTop})`);
@@ -240,65 +238,51 @@ export default function D3PaceZoneChart({ zoneBoundaries, zoneLabels, units }: P
         .attr("width", innerW).attr("height", PANEL_H)
         .attr("fill", color).attr("fill-opacity", 0.05);
 
-      // 2. Horizontal grid lines — same tick values across all panels so the
-      //    lines run continuously when the panels are visually stacked.
-      //    Panels 1 & 2 drop the top tick: it sits exactly on the inter-panel
-      //    border and would visually double up with the one from the panel above.
+      // 2. Horizontal grid lines
       const gridTicks = panelIdx === 0 ? yTicks : yTicks.slice(0, -1);
-
       g.selectAll<SVGLineElement, number>(".hgl")
-        .data(gridTicks)
-        .join("line")
-        .attr("class", "hgl")
+        .data(gridTicks).join("line").attr("class", "hgl")
         .attr("x1", 0).attr("x2", innerW)
         .attr("y1", (t) => yScale(t)).attr("y2", (t) => yScale(t))
         .attr("stroke", "#888").attr("stroke-opacity", 0.28)
         .attr("stroke-width", 0.75).attr("stroke-dasharray", "4,3");
 
-      // 3. Vertical grid lines — one per activity, at the first lap of that run.
-      //    These are drawn before dots so they sit behind the data.
+      // 3. Vertical activity grid lines
       activityStarts.forEach(({ idx }) => {
-        g.append("line")
-          .attr("class", "vgl")
+        g.append("line").attr("class", "vgl")
           .attr("x1", xScale(idx)).attr("x2", xScale(idx))
           .attr("y1", 0).attr("y2", PANEL_H)
           .attr("stroke", "#888").attr("stroke-opacity", 0.35)
           .attr("stroke-width", 0.75);
       });
 
-      // 4. Average efficiency line — spans the full panel width at the zone mean.
+      // 4. Average efficiency line
       if (bucket.length > 0) {
         const avgEff = bucket.reduce((s, d) => s + d.efficiency, 0) / bucket.length;
-        g.append("line")
-          .attr("class", "avg-line")
+        g.append("line").attr("class", "avg-line")
           .attr("x1", 0).attr("x2", innerW)
           .attr("y1", yScale(avgEff)).attr("y2", yScale(avgEff))
-          .attr("stroke", color)
-          .attr("stroke-width", 1.5)
-          .attr("stroke-dasharray", "6,4")
-          .attr("stroke-opacity", 0.65);
+          .attr("stroke", color).attr("stroke-width", 1.5)
+          .attr("stroke-dasharray", "6,4").attr("stroke-opacity", 0.65);
       }
 
-      // 5. Inter-panel divider (skip the very top edge — the outer border handles it)
+      // 5. Inter-panel divider
       if (panelIdx > 0) {
         g.append("line")
           .attr("x1", 0).attr("x2", innerW).attr("y1", 0).attr("y2", 0)
           .attr("stroke", "#bbb").attr("stroke-width", 1);
       }
 
-      // 6. Y axis — suppress the top tick on panels 1 & 2 (matches gridTicks)
+      // 6. Y axis — suppress top tick on panels 1 & 2
       const axisTicks = panelIdx === 0 ? yTicks : yTicks.slice(0, -1);
       const yAxis = d3.axisLeft(yScale)
-        .tickValues(axisTicks)
-        .tickSize(0)
+        .tickValues(axisTicks).tickSize(0)
         .tickFormat((v) => d3.format(".1f")(+v));
       const yG = g.append("g").call(yAxis);
       yG.select(".domain").remove();
-      yG.selectAll(".tick text")
-        .attr("fill", "#777").attr("font-size", 10).attr("dx", -4);
+      yG.selectAll(".tick text").attr("fill", "#777").attr("font-size", 10).attr("dx", -4);
 
-      // 7. Rotated zone label: name on one line, pace range on a second line.
-      //    Both sit in the [0–26] px label strip to the left of the Y axis.
+      // 7. Rotated zone label: name + cadence range
       const midY = M.top + panelTop + PANEL_H / 2;
       svg.append("text")
         .attr("transform", `translate(${LABEL_NAME_X},${midY}) rotate(-90)`)
@@ -309,7 +293,7 @@ export default function D3PaceZoneChart({ zoneBoundaries, zoneLabels, units }: P
         .attr("transform", `translate(${LABEL_RANGE_X},${midY}) rotate(-90)`)
         .attr("text-anchor", "middle").attr("dominant-baseline", "middle")
         .attr("fill", color).attr("font-size", 8).attr("fill-opacity", 0.85)
-        .text(zoneRange(zoneIdx, zoneBoundaries, units));
+        .text(cadenceRange(zoneIdx, zoneBoundaries));
 
       // 8. Average efficiency badge (top-right corner)
       if (bucket.length > 0) {
@@ -328,8 +312,8 @@ export default function D3PaceZoneChart({ zoneBoundaries, zoneLabels, units }: P
           .text(`avg ${avgEff.toFixed(2)}`);
       }
 
-      // 9. Data dots (clipped to panel bounds)
-      const dataG = g.append("g").attr("clip-path", `url(#d3pz-clip-${panelIdx})`);
+      // 9. Data dots (clipped)
+      const dataG = g.append("g").attr("clip-path", `url(#d3cz-clip-${panelIdx})`);
 
       if (bucket.length === 0) {
         g.append("text")
@@ -338,13 +322,10 @@ export default function D3PaceZoneChart({ zoneBoundaries, zoneLabels, units }: P
           .text("No data in zone");
       } else {
         dataG.selectAll<SVGCircleElement, Classified>(".dot")
-          .data(bucket)
-          .join("circle")
-          .attr("class", "dot")
+          .data(bucket).join("circle").attr("class", "dot")
           .attr("cx", (d) => xScale(d.globalIdx))
           .attr("cy", (d) => yScale(d.efficiency))
-          .attr("r", 4)
-          .attr("fill", color)
+          .attr("r", 4).attr("fill", color)
           .attr("stroke", "#fff").attr("stroke-width", 1.5)
           .style("cursor", "pointer")
           .on("mouseenter", (event: MouseEvent, d: Classified) => {
@@ -356,14 +337,16 @@ export default function D3PaceZoneChart({ zoneBoundaries, zoneLabels, units }: P
               efficiency: d.efficiency,
               avgSpeed: d.avgSpeed,
               avgPower: d.avgPower,
-              totalDistance: d.totalDistance,
+              avgCadence: d.avgCadence,
               date: new Date(d.startTime).toLocaleDateString(),
             });
           })
           .on("mousemove", (event: MouseEvent) => {
             const rect = svgEl.getBoundingClientRect();
             setTooltip((prev) =>
-              prev ? { ...prev, svgX: event.clientX - rect.left, svgY: event.clientY - rect.top } : null
+              prev
+                ? { ...prev, svgX: event.clientX - rect.left, svgY: event.clientY - rect.top }
+                : null
             );
           })
           .on("mouseleave", (event: MouseEvent) => {
@@ -377,6 +360,7 @@ export default function D3PaceZoneChart({ zoneBoundaries, zoneLabels, units }: P
               lapNumber: d.lapNumber,
               avgSpeed: d.avgSpeed,
               avgPower: d.avgPower,
+              avgCadence: d.avgCadence,
               efficiency: d.efficiency,
             });
           });
@@ -386,12 +370,10 @@ export default function D3PaceZoneChart({ zoneBoundaries, zoneLabels, units }: P
       if (panelIdx === 2) {
         const axisG = g.append("g").attr("transform", `translate(0,${PANEL_H})`);
 
-        // Limit labels to at most 8 to avoid crowding
         const maxLabels = 8;
         const step = Math.max(1, Math.ceil(activityStarts.length / maxLabels));
         const labelStarts = activityStarts.filter((_, i) => i % step === 0);
 
-        // Draw one tick mark + date label per selected activity start
         labelStarts.forEach(({ idx, date }) => {
           const x = xScale(idx);
           axisG.append("line")
@@ -404,7 +386,6 @@ export default function D3PaceZoneChart({ zoneBoundaries, zoneLabels, units }: P
             .text(d3.timeFormat("%b %d")(date));
         });
 
-        // Bottom axis line
         axisG.append("line")
           .attr("x1", 0).attr("x2", innerW).attr("y1", 0).attr("y2", 0)
           .attr("stroke", "#bbb").attr("stroke-width", 1);
@@ -422,7 +403,7 @@ export default function D3PaceZoneChart({ zoneBoundaries, zoneLabels, units }: P
   }, [chartData, zoneBoundaries[0], zoneBoundaries[1], zoneLabels[0], zoneLabels[1], zoneLabels[2], containerW, units]);
 
   function tooltipLeft(svgX: number) {
-    const tipW = 200;
+    const tipW = 220;
     return svgX + 14 + tipW > containerW ? svgX - tipW - 10 : svgX + 14;
   }
 
@@ -441,48 +422,50 @@ export default function D3PaceZoneChart({ zoneBoundaries, zoneLabels, units }: P
           ))}
         </Select>
       </Box>
+
       {fetching && (
         <Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>Loading…</Typography>
       )}
       {!fetching && chartData.length === 0 && (
         <Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>
-          No lap data with power available.
+          No lap data with cadence and power available.
         </Typography>
       )}
+
       <div ref={containerRef} style={{ position: "relative", width: "100%" }}>
-      <svg ref={svgRef} style={{ display: "block", overflow: "visible" }} />
+        <svg ref={svgRef} style={{ display: "block", overflow: "visible" }} />
 
-      {tooltip && (
-        <div style={{
-          position: "absolute",
-          left: tooltipLeft(tooltip.svgX),
-          top: tooltip.svgY - 16,
-          pointerEvents: "none",
-          background: "rgba(22,22,22,0.92)",
-          color: "#f0f0f0",
-          padding: "8px 12px",
-          borderRadius: 6,
-          fontSize: 12,
-          lineHeight: 1.7,
-          whiteSpace: "nowrap",
-          boxShadow: "0 3px 10px rgba(0,0,0,0.4)",
-        }}>
-          <div style={{ color: "#999", fontSize: 11, marginBottom: 2 }}>{tooltip.date}</div>
-          <div>Distance: <strong>{formatDistance(tooltip.totalDistance, units)}</strong></div>
-          <div>Efficiency: <strong>{tooltip.efficiency.toFixed(2)}</strong></div>
-          <div>Speed: <strong>{formatPace(tooltip.avgSpeed, units)}</strong></div>
-          <div>Power: <strong>{Math.round(tooltip.avgPower)} W</strong></div>
-        </div>
-      )}
+        {tooltip && (
+          <div style={{
+            position: "absolute",
+            left: tooltipLeft(tooltip.svgX),
+            top: tooltip.svgY - 16,
+            pointerEvents: "none",
+            background: "rgba(22,22,22,0.92)",
+            color: "#f0f0f0",
+            padding: "8px 12px",
+            borderRadius: 6,
+            fontSize: 12,
+            lineHeight: 1.7,
+            whiteSpace: "nowrap",
+            boxShadow: "0 3px 10px rgba(0,0,0,0.4)",
+          }}>
+            <div style={{ color: "#999", fontSize: 11, marginBottom: 2 }}>{tooltip.date}</div>
+            <div>Efficiency: <strong>{tooltip.efficiency.toFixed(2)}</strong></div>
+            <div>Speed: <strong>{formatPace(tooltip.avgSpeed, units)}</strong></div>
+            <div>Cadence: <strong>{Math.round(tooltip.avgCadence)} spm</strong></div>
+            <div>Power: <strong>{Math.round(tooltip.avgPower)} W</strong></div>
+          </div>
+        )}
 
-      <Dialog open={selected !== null} onClose={() => setSelected(null)} maxWidth="sm" fullWidth>
-        <DialogTitle>Activity Details</DialogTitle>
-        <DialogContent>
-          <Typography color="text.secondary" sx={{ py: 2 }}>
-            (Activity layout coming soon)
-          </Typography>
-        </DialogContent>
-      </Dialog>
+        <Dialog open={selected !== null} onClose={() => setSelected(null)} maxWidth="sm" fullWidth>
+          <DialogTitle>Activity Details</DialogTitle>
+          <DialogContent>
+            <Typography color="text.secondary" sx={{ py: 2 }}>
+              (Activity layout coming soon)
+            </Typography>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );

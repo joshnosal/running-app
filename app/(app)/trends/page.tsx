@@ -15,6 +15,9 @@ import EfficiencyBandChart from "@/components/charts/EfficiencyBandChart";
 import SpeedPowerScatter from "@/components/charts/SpeedPowerScatter";
 import ZoneEfficiencyChart from "@/components/charts/ZoneEfficiencyChart";
 import D3PaceZoneChart from "@/components/charts/D3PaceZoneChart";
+import D3EfficiencyBandChart from "@/components/charts/D3EfficiencyBandChart";
+import D3SpeedPowerScatter from "@/components/charts/D3SpeedPowerScatter";
+import D3CadenceZoneChart from "@/components/charts/D3CadenceZoneChart";
 import { useUserPreferences } from "@/lib/user-preferences-context";
 
 interface AnalyticsRecord {
@@ -114,12 +117,31 @@ export default function TrendsPage() {
             <EfficiencyBandChart data={efficiencyData} units={units} />
           </Paper>
 
+          {/* Chart 1b — Efficiency Statistical Bands */}
+          <Paper sx={{ p: 2, mb: 3 }}>
+            <Typography variant="subtitle1" gutterBottom>
+              Efficiency Statistical Bands
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+              Last 10 data points plotted against ±1σ / ±2σ bands computed over all {n} {dataType}.
+            </Typography>
+            <D3EfficiencyBandChart units={units} />
+          </Paper>
+
           {/* Chart 2 — Speed vs Power */}
           <Paper sx={{ p: 2, mb: 3 }}>
             <Typography variant="subtitle1" gutterBottom>
               Speed vs Power
             </Typography>
             <SpeedPowerScatter data={speedPowerData} units={units} />
+          </Paper>
+
+          {/* Chart 2b — Speed vs Power */}
+          <Paper sx={{ p: 2, mb: 3 }}>
+            <Typography variant="subtitle1" gutterBottom>
+              Speed vs Power
+            </Typography>
+            <D3SpeedPowerScatter units={units} />
           </Paper>
 
           {/* Chart 3 — Efficiency by Pace Zone */}
@@ -164,6 +186,26 @@ export default function TrendsPage() {
             <D3PaceZoneChart
               zoneBoundaries={paceBounds}
               zoneLabels={["Easy", "Tempo", "Threshold"]}
+              units={units}
+            />
+          </Paper>
+
+          {/* Chart 4b — Efficiency by Cadence Zone */}
+          <Paper sx={{ p: 2, mb: 3 }}>
+            <Typography variant="subtitle1" gutterBottom>
+              Efficiency by Cadence Zone (laps)
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+              Laps classified by cadence into Low / Mid / High zones.{" "}
+              <Tooltip title="Configure cadence zone boundaries in Settings → Training Zones">
+                <span style={{ cursor: "help", textDecoration: "underline dotted" }}>
+                  Edit boundaries in Settings
+                </span>
+              </Tooltip>
+            </Typography>
+            <D3CadenceZoneChart
+              zoneBoundaries={cadBounds}
+              zoneLabels={["Low", "Mid", "High"]}
               units={units}
             />
           </Paper>

@@ -3,7 +3,8 @@
     "allow": [
       "Bash(cd /d/Projects/running-app && npm install @prisma/client better-auth @mui/material @mui/x-data-grid @mui/x-date-pickers @emotion/react @emotion/styled recharts fit-file-parser dayjs 2>&1)",
       "Bash(grep:*)",
-      "Bash(cd \"D:/Projects/running-app\" && npx tsc --noEmit 2>&1)"
+      "Bash(cd \"D:/Projects/running-app\" && npx tsc --noEmit 2>&1)",
+      "Bash(ls:*)"
     ]
   },
   "plansDirectory": "./project-plans"
