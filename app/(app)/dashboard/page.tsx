@@ -50,6 +50,7 @@ export default async function DashboardPage() {
       avgCadence: true,
     },
   });
+  type RecentActivity = typeof recentActivities[number];
 
   // --- Weekly chart data ---
   const weekMap = new Map<
@@ -64,7 +65,7 @@ export default async function DashboardPage() {
       weekMap.set(label, { distanceM: 0, efficiency: [], hrZones: [0, 0, 0, 0, 0], cadences: [], totalTimeS: 0 });
     }
   }
-  for (const activity of recentActivities) {
+  for (const activity of recentActivities as RecentActivity[]) {
     const label = getISOWeekLabel(new Date(activity.startTime));
     if (!weekMap.has(label)) {
       weekMap.set(label, { distanceM: 0, efficiency: [], hrZones: [0, 0, 0, 0, 0], cadences: [], totalTimeS: 0 });
@@ -110,15 +111,15 @@ export default async function DashboardPage() {
   const thisWeekDist = weekMap.get(thisWeekLabel)?.distanceM ?? 0;
   const monthAgo = new Date();
   monthAgo.setMonth(monthAgo.getMonth() - 1);
-  const monthActivities = recentActivities.filter((a) => new Date(a.startTime) >= monthAgo);
+  const monthActivities = recentActivities.filter((a: RecentActivity) => new Date(a.startTime) >= monthAgo);
   const monthCount = monthActivities.length;
   const monthAvgHR = monthCount
-    ? monthActivities.filter((a) => a.avgHeartRate).reduce((sum, a) => sum + (a.avgHeartRate ?? 0), 0) /
-      (monthActivities.filter((a) => a.avgHeartRate).length || 1)
+    ? monthActivities.filter((a: RecentActivity) => a.avgHeartRate).reduce((sum, a: RecentActivity) => sum + (a.avgHeartRate ?? 0), 0) /
+      (monthActivities.filter((a: RecentActivity) => a.avgHeartRate).length || 1)
     : null;
   const monthAvgEff = monthCount
-    ? monthActivities.filter((a) => a.efficiencyScore).reduce((sum, a) => sum + (a.efficiencyScore ?? 0), 0) /
-      (monthActivities.filter((a) => a.efficiencyScore).length || 1)
+    ? monthActivities.filter((a: RecentActivity) => a.efficiencyScore).reduce((sum, a: RecentActivity) => sum + (a.efficiencyScore ?? 0), 0) /
+      (monthActivities.filter((a: RecentActivity) => a.efficiencyScore).length || 1)
     : null;
 
   const statCards = [
