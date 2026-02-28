@@ -114,11 +114,11 @@ export default async function DashboardPage() {
   const monthActivities = recentActivities.filter((a: RecentActivity) => new Date(a.startTime) >= monthAgo);
   const monthCount = monthActivities.length;
   const monthAvgHR = monthCount
-    ? monthActivities.filter((a: RecentActivity) => a.avgHeartRate).reduce((sum, a: RecentActivity) => sum + (a.avgHeartRate ?? 0), 0) /
+    ? monthActivities.filter((a: RecentActivity) => a.avgHeartRate).reduce((sum: number, a: RecentActivity) => sum + (a.avgHeartRate ?? 0), 0) /
       (monthActivities.filter((a: RecentActivity) => a.avgHeartRate).length || 1)
     : null;
   const monthAvgEff = monthCount
-    ? monthActivities.filter((a: RecentActivity) => a.efficiencyScore).reduce((sum, a: RecentActivity) => sum + (a.efficiencyScore ?? 0), 0) /
+    ? monthActivities.filter((a: RecentActivity) => a.efficiencyScore).reduce((sum: number, a: RecentActivity) => sum + (a.efficiencyScore ?? 0), 0) /
       (monthActivities.filter((a: RecentActivity) => a.efficiencyScore).length || 1)
     : null;
 
