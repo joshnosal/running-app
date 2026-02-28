@@ -4,9 +4,9 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "prisma generate && next build",
     "start": "next start",
-    "typecheck": "npx rimraf .next tsconfig.tsbuildinfo && tsc --noEmit && next build"
+    "typecheck": "npx rimraf .next tsconfig.tsbuildinfo && prisma generate && tsc --noEmit && next build"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",
