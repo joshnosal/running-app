@@ -26,17 +26,19 @@ export async function GET(request: NextRequest) {
         take: runsLimit,
         select: { id: true },
       });
+      type RecentActivityId = typeof recentActivities[number];
 
-      const activityIds = recentActivities.map((a) => a.id);
+      const activityIds = recentActivities.map((a: RecentActivityId) => a.id);
 
       const laps = await db.lap.findMany({
         where: { activityId: { in: activityIds }, totalDistance: { gte: 25 } },
         orderBy: [{ activity: { startTime: "desc" } }, { lapNumber: "asc" }],
         include: { activity: { select: { startTime: true } } },
       });
+      type LapRow = typeof laps[number];
 
       return NextResponse.json({
-        laps: laps.map((lap) => ({
+        laps: laps.map((lap: LapRow) => ({
           id: lap.id,
           activityId: lap.activityId,
           lapNumber: lap.lapNumber,
@@ -57,9 +59,10 @@ export async function GET(request: NextRequest) {
       take: limit,
       include: { activity: { select: { startTime: true } } },
     });
+    type LapRow = typeof laps[number];
 
     return NextResponse.json({
-      laps: laps.map((lap) => ({
+      laps: laps.map((lap: LapRow) => ({
         id: lap.id,
         activityId: lap.activityId,
         lapNumber: lap.lapNumber,
@@ -90,9 +93,10 @@ export async function GET(request: NextRequest) {
       efficiencyScore: true,
     },
   });
+  type ActivityRow = typeof activities[number];
 
   return NextResponse.json({
-    activities: activities.map((a) => ({
+    activities: activities.map((a: ActivityRow) => ({
       id: a.id,
       startTime: a.startTime.toISOString(),
       totalDistance: a.totalDistance,

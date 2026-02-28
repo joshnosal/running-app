@@ -48,12 +48,13 @@ export async function GET(request: Request) {
       select,
     }),
   ]);
+  type PeriodActivity = typeof allInPeriod[number];
 
   const baseline = allInPeriod.length > 0 ? {
-    totalDistance: avg(allInPeriod.map((r) => r.totalDistance)),
-    avgSpeed:      avg(allInPeriod.map((r) => r.avgSpeed)),
-    avgHeartRate:  avg(allInPeriod.map((r) => r.avgHeartRate)),
-    efficiencyScore: avg(allInPeriod.map((r) => r.efficiencyScore)),
+    totalDistance: avg(allInPeriod.map((r: PeriodActivity) => r.totalDistance)),
+    avgSpeed:      avg(allInPeriod.map((r: PeriodActivity) => r.avgSpeed)),
+    avgHeartRate:  avg(allInPeriod.map((r: PeriodActivity) => r.avgHeartRate)),
+    efficiencyScore: avg(allInPeriod.map((r: PeriodActivity) => r.efficiencyScore)),
   } : null;
 
   return NextResponse.json({

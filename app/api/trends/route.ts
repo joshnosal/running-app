@@ -52,6 +52,7 @@ export async function GET(request: NextRequest) {
   const recentRuns = allInPeriod.slice(-5);
   // All except the last 5 form the baseline
   const baselineRuns = allInPeriod.slice(0, Math.max(0, allInPeriod.length - 5));
+  type PeriodActivity = typeof allInPeriod[number];
 
   function avg(arr: (number | null | undefined)[]): number | null {
     const valid = arr.filter((v): v is number => v != null);
@@ -62,19 +63,19 @@ export async function GET(request: NextRequest) {
   const baselineAverages =
     baselineRuns.length > 0
       ? {
-          totalDistance: avg(baselineRuns.map((r) => r.totalDistance)),
-          totalMovingTime: avg(baselineRuns.map((r) => r.totalMovingTime)),
-          avgHeartRate: avg(baselineRuns.map((r) => r.avgHeartRate)),
-          avgCadence: avg(baselineRuns.map((r) => r.avgCadence)),
-          avgPower: avg(baselineRuns.map((r) => r.avgPower)),
-          efficiencyScore: avg(baselineRuns.map((r) => r.efficiencyScore)),
+          totalDistance: avg(baselineRuns.map((r: PeriodActivity) => r.totalDistance)),
+          totalMovingTime: avg(baselineRuns.map((r: PeriodActivity) => r.totalMovingTime)),
+          avgHeartRate: avg(baselineRuns.map((r: PeriodActivity) => r.avgHeartRate)),
+          avgCadence: avg(baselineRuns.map((r: PeriodActivity) => r.avgCadence)),
+          avgPower: avg(baselineRuns.map((r: PeriodActivity) => r.avgPower)),
+          efficiencyScore: avg(baselineRuns.map((r: PeriodActivity) => r.efficiencyScore)),
           avgVerticalOscillation: avg(
-            baselineRuns.map((r) => r.avgVerticalOscillation)
+            baselineRuns.map((r: PeriodActivity) => r.avgVerticalOscillation)
           ),
           avgGroundContactTime: avg(
-            baselineRuns.map((r) => r.avgGroundContactTime)
+            baselineRuns.map((r: PeriodActivity) => r.avgGroundContactTime)
           ),
-          avgSpeed: avg(baselineRuns.map((r) => r.avgSpeed)),
+          avgSpeed: avg(baselineRuns.map((r: PeriodActivity) => r.avgSpeed)),
         }
       : null;
 
