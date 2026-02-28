@@ -164,7 +164,7 @@ export default async function ActivityDetailPage({
                 </TableRow>
               </TableHead>
               <TableBody>
-                {activity.laps.map((lap) => (
+                {activity.laps.map((lap: typeof activity.laps[number]) => (
                   <TableRow key={lap.id}>
                     <TableCell>{lap.lapNumber}</TableCell>
                     <TableCell>{formatDistance(lap.totalDistance, units)}</TableCell>
